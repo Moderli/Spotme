@@ -2,7 +2,7 @@
 
 ## Overview
 
-Revela is an AI-powered event photo platform where:
+Spotme is an AI-powered event photo platform where:
 
 * Photographers create events and upload photos.
 * Guests scan a QR code and upload a selfie.
@@ -183,7 +183,7 @@ Login
 
 ```text
 Scan QR
-→ Enter WhatsApp Number
+→ Enter WhatsApp Number verification
 → Upload Selfie
 → AI Searches Photos
 → View Photos
@@ -257,5 +257,3 @@ The core magic moment is:
 Upload selfie
 → instantly see your event photos
 ```
-
-Everything else is secondary.
