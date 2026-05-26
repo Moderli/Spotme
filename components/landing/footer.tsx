@@ -20,8 +20,8 @@ export default function Footer() {
                 </Link>
               </li>
               <li>
-                <Link href="/galleries" className="text-on-surface-variant hover:text-primary transition-colors text-sm">
-                  Galleries
+                <Link href="/#features" className="text-on-surface-variant hover:text-primary transition-colors text-sm">
+                  Features
                 </Link>
               </li>
               <li>

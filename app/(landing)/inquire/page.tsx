@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import MobileNav from "@/components/MobileNav";
+import Header from "@/components/landing/navbar";
+import Footer from "@/components/landing/footer";
+import MobileNav from "@/components/landing/mobile-nav";
 
 export default function Inquire() {
   const [name, setName] = useState("");

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import MobileNav from "@/components/MobileNav";
+import Header from "@/components/landing/navbar";
+import Footer from "@/components/landing/footer";
+import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
 
 export default function About() {
@@ -236,10 +236,10 @@ export default function About() {
                   Inquire Now
                 </Link>
                 <Link
-                  href="/galleries"
+                  href="/#features"
                   className="border-2 border-on-primary text-on-primary px-10 py-4 rounded-xl font-sans font-semibold text-sm hover:bg-on-primary hover:text-primary transition-all duration-300 text-center"
                 >
-                  View Collections
+                  Explore Features
                 </Link>
               </div>
             </div>

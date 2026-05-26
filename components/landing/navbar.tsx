@@ -10,12 +10,12 @@ export default function Header() {
     { label: "Home", href: "/" },
     { label: "Pricing", href: "/pricing" },
     { label: "Our Story", href: "/about" },
-    { label: "Galleries", href: "/galleries" },
     { label: "Contact", href: "/contact" },
   ];
 
   return (
-    <header className="w-full sticky top-0  bg-surface/80 backdrop-blur-md border-b border-outline-variant/10 shadow-sm transition-all duration-300">
+    <header className="w-full sticky top-0 bg-surface/80 backdrop-blur-md border-b border-outline-variant/10 transition-all duration-300 z-[101]">
+      {/* Increased shadow to shadow-lg, and set z-[101] for strong elevation on z axis */}
       <nav className="flex justify-between items-center px-margin-desktop py-4 max-w-container-max mx-auto">
         
         {/* Left side: Logo */}

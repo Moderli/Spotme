@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, FormEvent } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import MobileNav from "@/components/MobileNav";
+import Header from "@/components/landing/navbar";
+import Footer from "@/components/landing/footer";
+import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
 
 export default function Login() {
@@ -115,7 +115,7 @@ export default function Login() {
 
               <div className="text-center pt-4 border-t border-outline-variant/10 text-xs text-on-surface-variant font-sans">
                 New to Revela?{" "}
-                <Link href="/signup" className="text-primary font-semibold hover:underline">
+                <Link href="/register" className="text-primary font-semibold hover:underline">
                   Create an account
                 </Link>
               </div>

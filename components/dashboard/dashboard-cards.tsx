@@ -1,0 +1,273 @@
+import Link from "next/link";
+import { activityFeed, dashboardEvents, type EventRecord } from "@/lib/dashboard-data";
+
+function formatCount(value: number) {
+  return value.toLocaleString("en-US");
+}
+
+/* ═══════════════════════════════════════════════════
+   Hero Summary — Dashboard Welcome Banner
+   ═══════════════════════════════════════════════════ */
+export function HeroSummary() {
+  const stats = [
+    { label: "Active events", value: "12", change: "+2 this week", icon: "calendar_today" },
+    { label: "Photos uploaded", value: "18.4k", change: "+1,248 today", icon: "photo_camera" },
+    { label: "AI matches today", value: "3,842", change: "96.4% accuracy", icon: "auto_awesome" },
+  ];
+
+  return (
+    <section className="relative mb-9 overflow-hidden rounded-[30px] border border-[#D67D5C]/10 bg-white/50 p-6 shadow-[0_20px_55px_rgba(72,57,48,0.04)] backdrop-blur-xl sm:p-8 lg:p-9">
+      {/* Decorative ambient blurs */}
+      <div className="pointer-events-none absolute -right-16 -top-20 h-64 w-64 rounded-full bg-gradient-to-br from-[#F4A261]/20 to-[#D67D5C]/10 blur-3xl sm:h-72 sm:w-72" />
+      <div className="pointer-events-none absolute -bottom-12 left-[30%] h-40 w-56 rounded-full bg-gradient-to-r from-[#D67D5C]/8 to-[#F4A261]/5 blur-3xl" />
+
+      <div className="relative">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#B36144]">Good afternoon, Ari</p>
+        <h1 className="mt-3 max-w-xl text-2xl font-semibold tracking-[-0.06em] text-[#2D2D2D] sm:text-3xl lg:text-[40px]">
+          Your events are finding their people.
+        </h1>
+        <p className="mt-3 max-w-lg text-sm leading-6 text-[#766D66]">
+          Three galleries are live today. Lake Como is receiving new matches in real time.
+        </p>
+        <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 sm:mt-9">
+          {stats.map((stat) => (
+            <div
+              key={stat.label}
+              className="rounded-2xl border border-[#2D2D2D]/5 bg-white/60 p-4 backdrop-blur-md transition-all duration-300 hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(214,125,92,0.06)] sm:p-5"
+            >
+              <div className="mb-4 flex items-center justify-between text-[#A69C93] sm:mb-6">
+                <p className="text-xs font-medium">{stat.label}</p>
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#FDF8F1] sm:h-9 sm:w-9">
+                  <span className="material-symbols-outlined text-[18px] text-[#D67D5C]">{stat.icon}</span>
+                </span>
+              </div>
+              <p className="text-2xl font-semibold tracking-[-0.05em] sm:text-3xl">{stat.value}</p>
+              <p className="mt-2 text-xs font-medium text-[#B36144]">{stat.change}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ── Status Badge ───────────────────────────────── */
+function StatusBadge({ status }: { status: EventRecord["status"] }) {
+  const styles = {
+    "Live matching": "bg-[#D67D5C]/12 text-[#B65F41]",
+    Processing: "bg-[#F4A261]/18 text-[#A96020]",
+    Ready: "bg-[#E8EFE5] text-[#497044]",
+  };
+
+  return (
+    <span className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[11px] font-semibold backdrop-blur-sm ${styles[status]}`}>
+      <span
+        className={`h-1.5 w-1.5 rounded-full ${
+          status === "Live matching" ? "bg-[#B65F41] animate-pulse" : "bg-current"
+        }`}
+      />
+      {status}
+    </span>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Event Card — Individual Event Tile
+   ═══════════════════════════════════════════════════ */
+export function EventCard({ event }: { event: EventRecord }) {
+  return (
+    <article className="group overflow-hidden rounded-[26px] border border-[#2D2D2D]/6 bg-white/65 shadow-[0_10px_28px_rgba(45,45,45,0.04)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(214,125,92,0.08)]">
+      {/* Cover image */}
+      <div className="relative h-40 overflow-hidden sm:h-48">
+        <div
+          className="absolute inset-0 bg-cover bg-center transition-transform duration-700 will-change-transform group-hover:scale-105"
+          style={{ backgroundImage: `url("${event.cover}")` }}
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#2D2D2D]/50 via-[#2D2D2D]/10 to-transparent" />
+        <div className="absolute left-3 top-3 sm:left-4 sm:top-4">
+          <StatusBadge status={event.status} />
+        </div>
+        <span className="absolute bottom-3 right-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-medium text-[#625D58] backdrop-blur-md sm:bottom-4 sm:right-4 sm:px-3 sm:py-1.5 sm:text-[11px]">
+          QR {event.qrActive ? "Active" : "Draft"}
+        </span>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 sm:p-5">
+        <h3 className="text-base font-semibold tracking-[-0.035em] sm:text-lg">{event.name}</h3>
+        <p className="mt-1 flex items-center gap-1 text-xs text-[#827970]">
+          <span className="material-symbols-outlined text-[13px]">calendar_today</span>
+          {event.date} · {event.venue}
+        </p>
+
+        {/* Stats row */}
+        <div className="mt-4 grid grid-cols-3 gap-2 rounded-2xl bg-gradient-to-r from-[#FBF7F2] to-[#FDF9F6] p-3 sm:mt-5">
+          {[
+            { label: "Photos", value: formatCount(event.photos) },
+            { label: "Guests", value: formatCount(event.guests) },
+            { label: "Matches", value: formatCount(event.matches) },
+          ].map((metric) => (
+            <div key={metric.label}>
+              <p className="text-[10px] uppercase tracking-wider text-[#958A81]">{metric.label}</p>
+              <p className="mt-1 text-sm font-semibold">{metric.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-4 sm:mt-5">
+          <div className="mb-2 flex justify-between text-[11px] font-medium text-[#827970]">
+            <span>AI processing</span>
+            <span>{event.progress}%</span>
+          </div>
+          <div className="h-1.5 rounded-full bg-[#EEE6DD]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#D67D5C] to-[#F4A261] transition-all duration-700"
+              style={{ width: `${event.progress}%` }}
+            />
+          </div>
+        </div>
+
+        {/* Action buttons */}
+        <div className="mt-4 flex gap-2 sm:mt-5">
+          <Link
+            href={`/dashboard/events/${event.id}`}
+            className="flex-1 rounded-xl bg-[#2D2D2D] px-3 py-2.5 text-center text-xs font-semibold text-white transition-all duration-200 hover:bg-black active:scale-[0.98] sm:px-4 sm:py-3"
+          >
+            Open Event
+          </Link>
+          <Link
+            href={`/dashboard/events/${event.id}/uploads`}
+            className="flex-1 rounded-xl border border-[#D9CEC5] px-3 py-2.5 text-center text-xs font-semibold text-[#574F49] transition-all duration-200 hover:border-[#D67D5C]/50 hover:bg-[#D67D5C]/5 active:scale-[0.98] sm:px-4 sm:py-3"
+          >
+            Upload Photos
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Events Grid — Event Cards Container
+   ═══════════════════════════════════════════════════ */
+export function EventsGrid({ compact = false }: { compact?: boolean }) {
+  return (
+    <section>
+      <div className="mb-5 flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-[-0.045em] sm:text-xl">Events</h2>
+          {!compact && <p className="mt-1 text-sm text-[#827970]">Active event workspaces and live photo matching.</p>}
+        </div>
+        {!compact && (
+          <Link href="/dashboard/events" className="text-sm font-medium text-[#B36144] transition hover:text-[#D67D5C]">
+            View all events
+          </Link>
+        )}
+      </div>
+      <div className={`grid gap-4 sm:gap-5 ${compact ? "sm:grid-cols-2 xl:grid-cols-3" : "sm:grid-cols-2 xl:grid-cols-3"}`}>
+        {dashboardEvents.map((event) => (
+          <EventCard event={event} key={event.id} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Activity Card — Recent Activity Feed
+   ═══════════════════════════════════════════════════ */
+export function ActivityCard() {
+  return (
+    <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/65 p-5 backdrop-blur-xl sm:p-6">
+      <div className="mb-5 flex items-center justify-between sm:mb-6">
+        <h2 className="text-base font-semibold tracking-[-0.035em] sm:text-lg">Recent activity</h2>
+        <button className="text-xs font-medium text-[#B36144] transition hover:text-[#D67D5C]">View all</button>
+      </div>
+      <div className="space-y-1">
+        {activityFeed.map((activity, index) => (
+          <div key={activity.title} className="relative flex gap-3 pb-4 last:pb-0 sm:gap-4 sm:pb-5">
+            {index < activityFeed.length - 1 && <span className="absolute left-[17px] top-10 h-[calc(100%-34px)] w-px bg-gradient-to-b from-[#EBE2D9] to-transparent" />}
+            <span className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FDF8F1] to-[#FFF3EB] text-[#B36144]">
+              <span className="material-symbols-outlined text-[18px]">{activity.icon}</span>
+            </span>
+            <div className="pt-1">
+              <p className="text-sm font-medium">{activity.title}</p>
+              <p className="mt-1 text-xs text-[#827970]">{activity.detail}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Storage Card — Storage Usage Overview
+   ═══════════════════════════════════════════════════ */
+export function StorageCard() {
+  return (
+    <section id="storage" className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/65 p-5 backdrop-blur-xl sm:p-6">
+      <h2 className="text-base font-semibold tracking-[-0.035em] sm:text-lg">Storage</h2>
+      <div className="mt-5 flex items-center gap-5 sm:mt-6 sm:gap-6">
+        {/* Circular indicator */}
+        <div className="relative flex h-20 w-20 items-center justify-center rounded-full bg-[conic-gradient(#D67D5C_0_82%,#EFE6DD_82%_100%)] sm:h-24 sm:w-24">
+          <div className="flex h-[60px] w-[60px] flex-col items-center justify-center rounded-full bg-white sm:h-[74px] sm:w-[74px]">
+            <p className="text-lg font-semibold sm:text-xl">82%</p>
+            <p className="text-[9px] text-[#827970] sm:text-[10px]">Used</p>
+          </div>
+        </div>
+        <div className="space-y-2.5 text-sm sm:space-y-3">
+          <div>
+            <p className="text-xs text-[#827970]">Used storage</p>
+            <p className="mt-0.5 font-semibold sm:mt-1">410 GB</p>
+          </div>
+          <div>
+            <p className="text-xs text-[#827970]">Available</p>
+            <p className="mt-0.5 font-semibold sm:mt-1">90 GB</p>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5 h-1.5 rounded-full bg-[#EFE6DD] sm:mt-6">
+        <div className="h-full w-[82%] rounded-full bg-gradient-to-r from-[#D67D5C] to-[#F4A261]" />
+      </div>
+      <p className="mt-3 text-xs text-[#827970]">Uploads increased 8.4 GB this week.</p>
+    </section>
+  );
+}
+
+/* ═══════════════════════════════════════════════════
+   Plan Card — Current Subscription Plan
+   ═══════════════════════════════════════════════════ */
+export function PlanCard() {
+  return (
+    <section id="plan" className="overflow-hidden rounded-[26px] bg-gradient-to-br from-[#2D2D2D] to-[#1F1F1F] p-5 text-white sm:p-6">
+      <div className="flex items-center justify-between">
+        <h2 className="text-base font-medium tracking-[-0.035em] sm:text-lg">Pro Plan</h2>
+        <span className="rounded-full bg-gradient-to-r from-[#D67D5C]/20 to-[#F4A261]/15 px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#F2B29A]">
+          Current
+        </span>
+      </div>
+      <div className="mt-5 space-y-2.5 text-sm sm:mt-6 sm:space-y-3">
+        <div className="flex justify-between text-white/58">
+          <span>Events remaining</span>
+          <span className="font-medium text-white">8 of 20</span>
+        </div>
+        <div className="flex justify-between text-white/58">
+          <span>Storage remaining</span>
+          <span className="font-medium text-white">90 GB</span>
+        </div>
+        <div className="flex justify-between text-white/58">
+          <span>Renews</span>
+          <span className="font-medium text-white">June 24, 2026</span>
+        </div>
+      </div>
+      <Link
+        href="/dashboard/account"
+        className="mt-6 flex w-full items-center justify-center rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] py-3 text-xs font-semibold text-white transition-all duration-200 hover:shadow-[0_6px_16px_rgba(214,125,92,0.35)] active:scale-[0.98] sm:mt-7"
+      >
+        Upgrade Plan
+      </Link>
+    </section>
+  );
+}

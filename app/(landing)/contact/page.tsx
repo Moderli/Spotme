@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, FormEvent } from "react";
-import Header from "@/components/Header";
-import Footer from "@/components/Footer";
-import MobileNav from "@/components/MobileNav";
+import Header from "@/components/landing/navbar";
+import Footer from "@/components/landing/footer";
+import MobileNav from "@/components/landing/mobile-nav";
 
 export default function Contact() {
   const [name, setName] = useState("");
@@ -11,7 +11,6 @@ export default function Contact() {
   const [date, setDate] = useState("");
   const [location, setLocation] = useState("");
   const [story, setStory] = useState("");
-
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
@@ -87,12 +86,15 @@ export default function Contact() {
         <section className="py-24 bg-warm-bg reveal-section">
           <div className="w-full px-margin-desktop max-w-container-max mx-auto">
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-gutter items-start">
-              
+
               {/* Contact Form Column */}
               <div className="lg:col-span-7 bg-surface-container-lowest p-8 md:p-16 rounded-[32px] soft-lift border border-outline-variant/10">
                 <h2 className="font-serif text-3xl font-bold text-primary mb-2">Send an Inquiry</h2>
-                <p className="text-on-surface-variant mb-10 font-sans text-sm">
+                <p className="text-on-surface-variant mb-2 font-sans text-sm">
                   Tell us about your upcoming event or milestone.
+                </p>
+                <p className="text-on-surface-variant mb-10 font-sans text-sm">
+                  <span className="font-semibold text-primary">Custom pricing:</span> All of our services are tailored to your unique story and needs. For custom pricing based on your requirements and vision, please fill out the form below or reach out directly—we&apos;ll provide a detailed quote after discussing your event.
                 </p>
 
                 {isSubmitted ? (
@@ -190,7 +192,7 @@ export default function Contact() {
                   <span className="material-symbols-outlined text-[32px] mb-6">calendar_today</span>
                   <h3 className="font-serif text-2xl font-bold mb-4">Schedule a Discovery Call</h3>
                   <p className="opacity-80 font-sans text-sm mb-8 leading-relaxed">
-                    We would love to hear your story in person. Choose a time that works for you to discuss your vision and our collections.
+                    We would love to hear your story in person. Choose a time that works for you to discuss your vision and our collections. To receive custom-tailored pricing for your project, you are welcome to discuss your goals with us during the meeting.
                   </p>
                   <button className="bg-surface-bright text-primary px-8 py-3 rounded-xl font-sans font-semibold text-sm hover:bg-white transition-all active:scale-95 cursor-pointer">
                     Book a Meeting
