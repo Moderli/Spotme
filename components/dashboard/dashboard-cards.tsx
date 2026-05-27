@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { dashboardEvents, type EventRecord } from "@/lib/dashboard-data";
+import type { Event as EventRecord } from "@/types/database";
 
 function formatCount(value: number) {
   return value.toLocaleString("en-US");
@@ -8,10 +8,19 @@ function formatCount(value: number) {
 /* ═══════════════════════════════════════════════════
    Hero Summary — Dashboard Welcome Banner
    ═══════════════════════════════════════════════════ */
-export function HeroSummary() {
+export function HeroSummary({
+  userName,
+  totalEvents,
+  totalPhotos,
+}: {
+  userName?: string;
+  totalEvents: number;
+  totalPhotos: number;
+}) {
+  const firstName = userName?.split(" ")[0] ?? "there";
   const stats = [
-    { label: "Active events", value: "12", change: "+2 this week", icon: "calendar_today" },
-    { label: "Photos uploaded", value: "18.4k", change: "+1,248 today", icon: "photo_camera" },
+    { label: "Active events", value: formatCount(totalEvents), change: `${totalEvents} total events`, icon: "calendar_today" },
+    { label: "Photos uploaded", value: formatCount(totalPhotos), change: "Across all events", icon: "photo_camera" },
   ];
 
   return (
@@ -21,12 +30,14 @@ export function HeroSummary() {
       <div className="pointer-events-none absolute -bottom-12 left-[30%] h-40 w-56 rounded-full bg-gradient-to-r from-[#D67D5C]/8 to-[#F4A261]/5 blur-3xl" />
 
       <div className="relative">
-        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#B36144]">Good afternoon, Ari</p>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#B36144]">Good day, {firstName}</p>
         <h1 className="mt-3 max-w-xl text-2xl font-semibold tracking-[-0.06em] text-[#2D2D2D] sm:text-3xl lg:text-[40px]">
           Your events are finding their people.
         </h1>
         <p className="mt-3 max-w-lg text-sm leading-6 text-[#766D66]">
-          Three galleries are live today. Lake Como is receiving new uploads in real time.
+          {totalEvents > 0
+            ? `You have ${totalEvents} event${totalEvents > 1 ? "s" : ""} and ${formatCount(totalPhotos)} photos in your gallery.`
+            : "Create your first event to get started."}
         </p>
         <div className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-2 sm:mt-9">
           {stats.map((stat) => (
@@ -53,18 +64,24 @@ export function HeroSummary() {
 /* ═══════════════════════════════════════════════════
    Event Card — Individual Event Tile
    ═══════════════════════════════════════════════════ */
-export function EventCard({ event }: { event: EventRecord }) {
+export function EventCard({ event, photoCount, guestCount }: { event: EventRecord; photoCount?: number; guestCount?: number }) {
   return (
     <article className="group overflow-hidden rounded-[26px] border border-[#2D2D2D]/6 bg-white/65 shadow-[0_10px_28px_rgba(45,45,45,0.04)] backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(214,125,92,0.08)]">
       {/* Cover image */}
       <div className="relative h-40 overflow-hidden sm:h-48">
-        <div
-          className="absolute inset-0 bg-cover bg-center transition-transform duration-700 will-change-transform group-hover:scale-105"
-          style={{ backgroundImage: `url("${event.cover}")` }}
-        />
+        {event.cover_url ? (
+          <div
+            className="absolute inset-0 bg-cover bg-center transition-transform duration-700 will-change-transform group-hover:scale-105"
+            style={{ backgroundImage: `url("${event.cover_url}")` }}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[#D67D5C]/20 to-[#F4A261]/10 flex items-center justify-center">
+            <span className="material-symbols-outlined text-4xl text-[#D67D5C]/30">image</span>
+          </div>
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#2D2D2D]/50 via-[#2D2D2D]/10 to-transparent" />
         <span className="absolute bottom-3 right-3 rounded-full bg-white/90 px-2.5 py-1 text-[10px] font-medium text-[#625D58] backdrop-blur-md sm:bottom-4 sm:right-4 sm:px-3 sm:py-1.5 sm:text-[11px]">
-          QR {event.qrActive ? "Active" : "Draft"}
+          QR {event.qr_active ? "Active" : "Draft"}
         </span>
       </div>
 
@@ -73,14 +90,17 @@ export function EventCard({ event }: { event: EventRecord }) {
         <h3 className="text-base font-semibold tracking-[-0.035em] sm:text-lg">{event.name}</h3>
         <p className="mt-1 flex items-center gap-1 text-xs text-[#827970]">
           <span className="material-symbols-outlined text-[13px]">calendar_today</span>
-          {event.date} · {event.venue}
+          {event.event_date
+            ? new Date(event.event_date).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
+            : "Date TBD"}
+          {event.venue && ` · ${event.venue}`}
         </p>
 
-        {/* Stats row (No Matches) */}
+        {/* Stats row */}
         <div className="mt-4 grid grid-cols-2 gap-2 rounded-2xl bg-gradient-to-r from-[#FBF7F2] to-[#FDF9F6] p-3 sm:mt-5">
           {[
-            { label: "Photos", value: formatCount(event.photos) },
-            { label: "Guests", value: formatCount(event.guests) },
+            { label: "Photos", value: formatCount(photoCount ?? 0) },
+            { label: "Guests", value: formatCount(guestCount ?? 0) },
           ].map((metric) => (
             <div key={metric.label}>
               <p className="text-[10px] uppercase tracking-wider text-[#958A81]">{metric.label}</p>
@@ -112,7 +132,13 @@ export function EventCard({ event }: { event: EventRecord }) {
 /* ═══════════════════════════════════════════════════
    Events Grid — Event Cards Container
    ═══════════════════════════════════════════════════ */
-export function EventsGrid({ compact = false }: { compact?: boolean }) {
+export function EventsGrid({
+  events,
+  compact = false,
+}: {
+  events: EventRecord[];
+  compact?: boolean;
+}) {
   return (
     <section>
       <div className="mb-5 flex items-center justify-between">
@@ -126,11 +152,20 @@ export function EventsGrid({ compact = false }: { compact?: boolean }) {
           </Link>
         )}
       </div>
-      <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {dashboardEvents.map((event) => (
-          <EventCard event={event} key={event.id} />
-        ))}
-      </div>
+
+      {events.length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-[26px] border border-dashed border-[#D67D5C]/30 bg-white/40 py-16 text-center">
+          <span className="material-symbols-outlined text-4xl text-[#D67D5C]/40 mb-3">photo_library</span>
+          <p className="text-sm font-medium text-[#2D2D2D]">No events yet</p>
+          <p className="mt-1 text-xs text-[#827970]">Click "Create Event" to get started.</p>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
+          {events.map((event) => (
+            <EventCard event={event} key={event.id} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

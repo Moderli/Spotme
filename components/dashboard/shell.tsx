@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { type ReactNode, useState, useEffect, useCallback } from "react";
-import type { EventRecord } from "@/lib/dashboard-data";
+import { usePathname, useRouter } from "next/navigation";
+import { type ReactNode, useState, useEffect, useCallback, useRef } from "react";
+import type { Event as EventRecord } from "@/types/database";
+import { createClient } from "@/lib/supabase/client";
 
 type MainSection = "Dashboard" | "Events" | "Storage" | "Settings";
 
@@ -40,21 +41,42 @@ function Brand({ collapsed }: { collapsed?: boolean }) {
 }
 
 /* ── Profile Block ──────────────────────────────── */
-function ProfileBlock({ collapsed }: { collapsed?: boolean }) {
+function ProfileBlock({ collapsed, userName }: { collapsed?: boolean; userName?: string }) {
+  const router = useRouter();
+  const initials = userName
+    ? userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    : "?";
+  const displayName = userName ?? "Photographer";
+
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+    router.refresh();
+  };
+
   return (
     <div className={`mt-8 flex items-center rounded-2xl border border-white/8 bg-white/[0.04] backdrop-blur-sm transition-all duration-300 ${collapsed ? "justify-center p-2.5" : "gap-3 p-3 hover:bg-white/[0.07]"}`}>
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#F4A261]/25 to-[#D67D5C]/15 text-sm font-semibold text-[#F4A261]">
-        AV
-      </div>
+      <button
+        onClick={handleSignOut}
+        title="Sign out"
+        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#F4A261]/25 to-[#D67D5C]/15 text-sm font-semibold text-[#F4A261] hover:opacity-80 transition"
+      >
+        {initials}
+      </button>
       {!collapsed && (
         <>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">Ari Vance</p>
+            <p className="truncate text-sm font-medium text-white">{displayName}</p>
             <p className="text-xs text-white/45">Photographer</p>
           </div>
-          <span className="shrink-0 rounded-full bg-gradient-to-r from-[#D67D5C]/20 to-[#F4A261]/15 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[#F2B29A]">
-            Pro
-          </span>
+          <button
+            onClick={handleSignOut}
+            title="Sign out"
+            className="shrink-0 rounded-xl bg-white/5 border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:bg-white/10 hover:text-white transition"
+          >
+            Sign out
+          </button>
         </>
       )}
     </div>
@@ -256,55 +278,124 @@ function NavItem({
    Create Event Modal (Popup) Component
    ═══════════════════════════════════════════════════ */
 export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [formData, setFormData] = useState({
     name: "",
     venue: "",
     date: "",
-    type: "Marriage",
+    type: "marriage" as "marriage" | "hackathon" | "meetup" | "corporate" | "other",
     adminName: "",
     adminPhone: "",
     adminEmail: "",
   });
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [uploadedFile, setUploadedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
-  const handleFakeUpload = () => {
-    setUploading(true);
-    setUploadProgress(0);
-    const interval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(interval);
-          setUploading(false);
-          setUploadedFile("event_cover_preview.jpg");
-          return 100;
-        }
-        return prev + 25;
-      });
-    }, 150);
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCoverFile(file);
+    setCoverPreview(URL.createObjectURL(file));
   };
 
   const handleRemoveFile = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setUploadedFile(null);
-    setUploadProgress(0);
+    setCoverFile(null);
+    setCoverPreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
+    setError(null);
+
+    const supabase = createClient();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setError("You must be signed in to create an event.");
       setLoading(false);
-      onClose();
-      alert(`Event "${formData.name}" (${formData.type}) Workspace Created Successfully!`);
-      // Reset form states
-      setFormData({ name: "", venue: "", date: "", type: "Marriage", adminName: "", adminPhone: "", adminEmail: "" });
-      setUploadedFile(null);
-    }, 1200);
+      return;
+    }
+
+    let coverUrl: string | null = null;
+
+    // Upload cover image if provided
+    if (coverFile) {
+      setUploading(true);
+      const ext = coverFile.name.split(".").pop() ?? "jpg";
+      const storagePath = `${user.id}/${Date.now()}.${ext}`;
+
+      // Simulate progress
+      let prog = 0;
+      const interval = setInterval(() => {
+        prog = Math.min(prog + 20, 90);
+        setUploadProgress(prog);
+      }, 100);
+
+      const { error: uploadError } = await supabase.storage
+        .from("event-covers")
+        .upload(storagePath, coverFile, { upsert: true });
+
+      clearInterval(interval);
+      setUploadProgress(100);
+      setUploading(false);
+
+      if (uploadError) {
+        setError(`Cover upload failed: ${uploadError.message}`);
+        setLoading(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("event-covers")
+        .getPublicUrl(storagePath);
+      coverUrl = urlData.publicUrl;
+    }
+
+    // Insert event record
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: newEvent, error: insertError } = await (supabase as any)
+      .from("events")
+      .insert({
+        owner_id: user.id,
+        name: formData.name,
+        venue: formData.venue || null,
+        event_date: formData.date || null,
+        event_type: formData.type,
+        cover_url: coverUrl,
+        admin_name: formData.adminName || null,
+        admin_phone: formData.adminPhone || null,
+        admin_email: formData.adminEmail || null,
+        status: "active" as const,
+        qr_active: true,
+      })
+      .select()
+      .single();
+
+    if (insertError) {
+      setError(`Failed to create event: ${insertError.message}`);
+      setLoading(false);
+      return;
+    }
+
+    // Reset and close
+    setFormData({ name: "", venue: "", date: "", type: "marriage", adminName: "", adminPhone: "", adminEmail: "" });
+    setCoverFile(null);
+    setCoverPreview(null);
+    setLoading(false);
+    onClose();
+
+    // Navigate to the new event workspace
+    router.push(`/dashboard/events/${newEvent.id}`);
+    router.refresh();
   };
 
   return (
@@ -330,28 +421,35 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
           {/* Cover Image Uploader */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wider text-[#766D66] mb-2">Cover Image</label>
-            <div 
-              onClick={!uploadedFile && !uploading ? handleFakeUpload : undefined}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/heic"
+              onChange={handleFileChange}
+              className="hidden"
+              id="cover-upload"
+            />
+            <label
+              htmlFor="cover-upload"
               className={`relative flex min-h-[110px] flex-col items-center justify-center rounded-2xl border-2 border-dashed transition-all cursor-pointer ${
-                uploadedFile 
-                  ? "border-green-300 bg-green-50/20" 
-                  : uploading 
-                    ? "border-[#D67D5C]/40 bg-[#D67D5C]/5" 
+                coverPreview
+                  ? "border-green-300 bg-green-50/20"
+                  : uploading
+                    ? "border-[#D67D5C]/40 bg-[#D67D5C]/5"
                     : "border-[#D9CEC5] bg-white hover:border-[#D67D5C]/55"
               }`}
             >
-              {uploadedFile ? (
+              {coverPreview ? (
                 <div className="flex w-full items-center justify-between px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-green-100 text-green-700">
-                      <span className="material-symbols-outlined text-[20px]">image</span>
-                    </span>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={coverPreview} alt="Cover preview" className="h-10 w-10 rounded-xl object-cover" />
                     <div className="text-left">
-                      <p className="text-xs font-semibold text-[#2D2D2D]">{uploadedFile}</p>
-                      <p className="text-[10px] text-green-600 font-medium">Ready to save</p>
+                      <p className="text-xs font-semibold text-[#2D2D2D]">{coverFile?.name}</p>
+                      <p className="text-[10px] text-green-600 font-medium">Ready to upload</p>
                     </div>
                   </div>
-                  <button 
+                  <button
                     type="button"
                     onClick={handleRemoveFile}
                     className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-50 text-red-500 transition"
@@ -361,9 +459,9 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
                 </div>
               ) : uploading ? (
                 <div className="w-full px-6 py-3 text-center">
-                  <p className="text-xs font-semibold text-[#2D2D2D]">Uploading image...</p>
+                  <p className="text-xs font-semibold text-[#2D2D2D]">Uploading cover...</p>
                   <div className="mt-3 h-1.5 w-full overflow-hidden rounded-full bg-[#EFE6DD]">
-                    <div 
+                    <div
                       className="h-full rounded-full bg-gradient-to-r from-[#D67D5C] to-[#F4A261] transition-all duration-300"
                       style={{ width: `${uploadProgress}%` }}
                     />
@@ -376,7 +474,7 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
                   <p className="text-[10px] text-[#827970] mt-0.5">JPEG, PNG or HEIC up to 10MB</p>
                 </div>
               )}
-            </div>
+            </label>
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -395,15 +493,14 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
               <label className="block text-xs font-semibold uppercase tracking-wider text-[#766D66]">Type of Event</label>
               <select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value })}
-                className="mt-2 h-11 w-full rounded-xl border border-[#2D2D2D]/8 bg-white px-3 text-xs outline-none transition focus:border-[#D67D5C]/50 cursor-pointer appearance-none bg-[url('data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%25232D2D2D%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpath%20d%3D%22M6%209l6%206%206-6%22%2F%3E%3C%2Fsvg%3E')] bg-[length:16px] bg-[right_16px_center] bg-no-repeat"
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as typeof formData.type })}
+                className="mt-2 h-11 w-full rounded-xl border border-[#2D2D2D]/8 bg-white px-3 text-xs outline-none transition focus:border-[#D67D5C]/50 cursor-pointer"
               >
-                <option value="Marriage">Marriage / Wedding</option>
-                <option value="Hackathon">Hackathon</option>
-                <option value="Meetup">Meetup / Networking</option>
-                <option value="Conference">Conference</option>
-                <option value="Concert">Concert / Performance</option>
-                <option value="Other">Other</option>
+                <option value="marriage">Marriage / Wedding</option>
+                <option value="hackathon">Hackathon</option>
+                <option value="meetup">Meetup / Networking</option>
+                <option value="corporate">Corporate / Conference</option>
+                <option value="other">Other</option>
               </select>
             </div>
           </div>
@@ -472,6 +569,12 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
             </div>
           </div>
 
+          {error && (
+            <div className="rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700">
+              {error}
+            </div>
+          )}
+
           <div className="mt-6 flex gap-3 pt-2">
             <button
               type="button"
@@ -483,9 +586,11 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
             <button
               type="submit"
               disabled={loading || uploading}
-              className="flex-1 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] py-3 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(214,125,92,0.2)] hover:-translate-y-0.5 transition active:scale-[0.98] disabled:opacity-50"
+              className="flex-1 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] py-3 text-xs font-semibold text-white shadow-[0_10px_22px_rgba(214,125,92,0.2)] hover:-translate-y-0.5 transition active:scale-[0.98] disabled:opacity-50 flex items-center justify-center gap-2"
             >
-              {loading ? "Creating..." : "Create Workspace"}
+              {loading ? (
+                <><span className="material-symbols-outlined text-[16px] animate-spin">sync</span> Creating...</>
+              ) : "Create Workspace"}
             </button>
           </div>
         </form>
@@ -560,9 +665,11 @@ export function NotificationDrawer({ isOpen, onClose }: { isOpen: boolean; onClo
 export function DashboardShell({
   active,
   children,
+  userName,
 }: {
   active: MainSection;
   children: ReactNode;
+  userName?: string;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -608,7 +715,7 @@ export function DashboardShell({
         </button>
 
         <Brand collapsed={isCollapsed && !sidebarOpen} />
-        <ProfileBlock collapsed={isCollapsed && !sidebarOpen} />
+        <ProfileBlock collapsed={isCollapsed && !sidebarOpen} userName={userName} />
         
         <nav className="mt-8 space-y-1.5">
           {mainNavigation.map((item) => (
@@ -661,10 +768,12 @@ export function EventWorkspaceShell({
   event,
   activePath,
   children,
+  userName,
 }: {
   event: EventRecord;
   activePath: string;
   children: ReactNode;
+  userName?: string;
 }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -728,19 +837,25 @@ export function EventWorkspaceShell({
             href={`/dashboard/events/${event.id}`}
             title={event.name}
             className="mt-5 mx-auto block h-11 w-11 shrink-0 overflow-hidden rounded-xl border border-white/8 bg-cover bg-center transition-transform hover:scale-105"
-            style={{ backgroundImage: `url("${event.cover}")` }}
+            style={{ backgroundImage: event.cover_url ? `url("${event.cover_url}")` : undefined }}
           />
         ) : (
           <div className="mt-5 overflow-hidden rounded-2xl border border-white/8 bg-white/[0.04]">
-            <div
-              className="h-24 bg-cover bg-center"
-              style={{ backgroundImage: `url("${event.cover}")` }}
-            />
+            {event.cover_url ? (
+              <div
+                className="h-24 bg-cover bg-center"
+                style={{ backgroundImage: `url("${event.cover_url}")` }}
+              />
+            ) : (
+              <div className="h-24 bg-gradient-to-br from-[#D67D5C]/20 to-[#F4A261]/10 flex items-center justify-center">
+                <span className="material-symbols-outlined text-white/30 text-3xl">image</span>
+              </div>
+            )}
             <div className="p-4">
               <p className="truncate text-sm font-medium text-white">{event.name}</p>
               <p className="mt-1 flex items-center gap-1 text-xs text-white/48">
                 <span className="material-symbols-outlined text-[13px]">calendar_today</span>
-                {event.date}
+                {event.event_date ?? "Date TBD"}
               </p>
             </div>
           </div>
@@ -773,6 +888,7 @@ export function EventWorkspaceShell({
           })}
         </nav>
 
+        <ProfileBlock collapsed={isCollapsed && !sidebarOpen} userName={userName} />
         <StorageFooter collapsed={isCollapsed && !sidebarOpen} />
 
         <button

@@ -5,23 +5,38 @@ import Header from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 export default function Login() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!email || !password) return;
 
     setIsSubmitting(true);
-    // Mock login delay
-    setTimeout(() => {
+    setError(null);
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (authError) {
+      setError(authError.message);
       setIsSubmitting(false);
-      setIsSuccess(true);
-    }, 1500);
+      return;
+    }
+
+    // Redirect to dashboard on success
+    router.push("/dashboard");
+    router.refresh();
   };
 
   return (
@@ -38,89 +53,79 @@ export default function Login() {
             </p>
           </div>
 
-          {isSuccess ? (
-            <div className="text-center py-8 flex flex-col items-center justify-center animate-fade-in">
-              <span className="material-symbols-outlined text-green-600 text-5xl mb-4">check_circle</span>
-              <h2 className="text-xl font-serif font-bold text-on-surface mb-2">Login Successful</h2>
-              <p className="text-sm text-on-surface-variant leading-relaxed mb-6">
-                Welcome back to your archive. Redirecting to your dashboard...
-              </p>
-              <Link
-                href="/"
-                className="bg-primary text-on-primary font-sans font-semibold text-sm px-8 py-3 rounded-xl hover:scale-105 active:scale-95 transition-all"
-              >
-                Go to Home
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 animate-fade-in">
+                {error}
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <label className="font-sans font-semibold text-xs text-on-surface-variant px-1 block">
+                Email Address
+              </label>
+              <input
+                required
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
+                placeholder="hello@domain.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex justify-between items-center px-1">
+                <label className="font-sans font-semibold text-xs text-on-surface-variant block">
+                  Password
+                </label>
+                <a href="#" className="text-xs text-primary font-semibold hover:underline">
+                  Forgot password?
+                </a>
+              </div>
+              <input
+                required
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
+                placeholder="••••••••"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 px-1">
+              <input
+                type="checkbox"
+                id="remember"
+                className="rounded border-outline-variant text-primary focus:ring-primary h-4 w-4"
+              />
+              <label htmlFor="remember" className="text-xs text-on-surface-variant font-sans cursor-pointer select-none">
+                Keep me signed in on this device
+              </label>
+            </div>
+
+            <button
+              disabled={isSubmitting}
+              type="submit"
+              className="w-full bg-primary text-on-primary py-4 rounded-xl font-sans font-semibold text-sm hover:scale-[1.02] active:scale-95 transition-all duration-300 shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+            >
+              {isSubmitting ? (
+                <>
+                  <span className="material-symbols-outlined animate-spin text-[20px]">sync</span>
+                  Signing in...
+                </>
+              ) : (
+                "Sign In to Archive"
+              )}
+            </button>
+
+            <div className="text-center pt-4 border-t border-outline-variant/10 text-xs text-on-surface-variant font-sans">
+              New to Revela?{" "}
+              <Link href="/register" className="text-primary font-semibold hover:underline">
+                Create an account
               </Link>
             </div>
-          ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
-              <div className="space-y-2">
-                <label className="font-sans font-semibold text-xs text-on-surface-variant px-1 block">
-                  Email Address
-                </label>
-                <input
-                  required
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
-                  placeholder="hello@domain.com"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <label className="font-sans font-semibold text-xs text-on-surface-variant block">
-                    Password
-                  </label>
-                  <a href="#" className="text-xs text-primary font-semibold hover:underline">
-                    Forgot password?
-                  </a>
-                </div>
-                <input
-                  required
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
-                  placeholder="••••••••"
-                />
-              </div>
-
-              <div className="flex items-center gap-2 px-1">
-                <input
-                  type="checkbox"
-                  id="remember"
-                  className="rounded border-outline-variant text-primary focus:ring-primary h-4 w-4"
-                />
-                <label htmlFor="remember" className="text-xs text-on-surface-variant font-sans cursor-pointer select-none">
-                  Keep me signed in on this device
-                </label>
-              </div>
-
-              <button
-                disabled={isSubmitting}
-                type="submit"
-                className="w-full bg-primary text-on-primary py-4 rounded-xl font-sans font-semibold text-sm hover:scale-[1.02] active:scale-95 transition-all duration-300 shadow-md flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSubmitting ? (
-                  <>
-                    <span className="material-symbols-outlined animate-spin text-[20px]">sync</span>
-                    Signing in...
-                  </>
-                ) : (
-                  "Sign In to Archive"
-                )}
-              </button>
-
-              <div className="text-center pt-4 border-t border-outline-variant/10 text-xs text-on-surface-variant font-sans">
-                New to Revela?{" "}
-                <Link href="/register" className="text-primary font-semibold hover:underline">
-                  Create an account
-                </Link>
-              </div>
-            </form>
-          )}
+          </form>
         </div>
       </main>
 

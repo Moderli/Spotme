@@ -1,12 +1,19 @@
 import { SettingsPanel } from "@/components/dashboard/workspace-panels";
-import { WorkspacePage, workspaceParams } from "@/components/dashboard/workspace-page";
+import { WorkspacePage } from "@/components/dashboard/workspace-page";
+import { fetchEvent } from "@/lib/dashboard-data";
+import { notFound } from "next/navigation";
 
-export function generateStaticParams() {
-  return workspaceParams();
-}
+export const dynamic = "force-dynamic";
 
-export default async function EventSettingsPage({ params }: PageProps<"/dashboard/events/[eventId]/settings">) {
+export default async function EventSettingsPage({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}) {
   const { eventId } = await params;
+  const event = await fetchEvent(eventId);
+
+  if (!event) notFound();
 
   return (
     <WorkspacePage
@@ -16,7 +23,7 @@ export default async function EventSettingsPage({ params }: PageProps<"/dashboar
       title="Event controls"
       detail="Manage access, expiration, branding and archival controls for this event workspace."
     >
-      <SettingsPanel />
+      <SettingsPanel event={event} />
     </WorkspacePage>
   );
 }

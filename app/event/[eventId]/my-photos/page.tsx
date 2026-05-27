@@ -1,65 +1,90 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { myPhotosResults } from "@/lib/guest-data";
+import { fetchGuestGalleryClient } from "@/lib/guest-data-client";
+import type { EventPhoto } from "@/types/database";
 
 export default function MyPhotosPage() {
   const { eventId } = useParams<{ eventId: string }>();
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
-  const photos = myPhotosResults;
+  const [photos, setPhotos] = useState<EventPhoto[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // For now (AI matching paused) — show all event photos
+    // When face matching is live, we'll filter by guest selfie match
+    fetchGuestGalleryClient(eventId)
+      .then(setPhotos)
+      .finally(() => setLoading(false));
+  }, [eventId]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[calc(100vh-56px)] items-center justify-center">
+        <div className="flex flex-col items-center gap-3 text-center">
+          <span className="h-8 w-8 animate-spin rounded-full border-[3px] border-[#D67D5C]/20 border-t-[#D67D5C]" />
+          <p className="text-sm text-[#827970]">Loading your photos...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[calc(100vh-56px)] pb-10">
       {/* ── Success Header ─────────────────────────── */}
       <div className="bg-gradient-to-b from-[#FDF8F1] to-[#FEFCFB] px-5 py-8 text-center sm:px-8 sm:py-10">
-        {/* Checkmark */}
+        {/* Icon */}
         <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#D67D5C] to-[#F4A261] shadow-[0_8px_24px_rgba(214,125,92,0.25)]">
           <span className="material-symbols-outlined text-[30px] text-white">auto_awesome</span>
         </div>
 
         <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
-          We found <span className="text-[#D67D5C]">{photos.length} photos</span> of you!
+          {photos.length > 0
+            ? <>Here are <span className="text-[#D67D5C]">{photos.length} photos</span> from the event!</>
+            : "Photos are on their way!"}
         </h1>
         <p className="mt-2 text-sm text-[#827970]">
-          These are all the event photos you appear in. Download or share them below.
+          {photos.length > 0
+            ? "Face matching is coming soon — showing all event photos for now."
+            : "The photographer is still uploading. Check back soon."}
         </p>
 
         {/* Action buttons */}
-        <div className="mt-5 flex justify-center gap-3">
-          <button className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] px-5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(214,125,92,0.2)] transition-all hover:-translate-y-0.5 active:scale-[0.98]">
-            <span className="material-symbols-outlined text-[18px]">download</span>
-            Download All
-          </button>
-          <button className="flex h-11 items-center gap-2 rounded-2xl border border-[#2D2D2D]/8 bg-white px-5 text-sm font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] active:scale-[0.98]">
-            <span className="material-symbols-outlined text-[18px]">share</span>
-            Share
-          </button>
-        </div>
+        {photos.length > 0 && (
+          <div className="mt-5 flex justify-center gap-3">
+            <button className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] px-5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(214,125,92,0.2)] transition-all hover:-translate-y-0.5 active:scale-[0.98]">
+              <span className="material-symbols-outlined text-[18px]">download</span>
+              Download All
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ── Photo Grid ─────────────────────────────── */}
       <div className="mx-auto max-w-3xl px-4 pt-4 sm:px-6 sm:pt-5">
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
-          {photos.map((photo, index) => (
-            <button
-              key={photo}
-              onClick={() => setLightboxIndex(index)}
-              className="group relative aspect-square overflow-hidden rounded-xl sm:rounded-2xl"
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
-                style={{ backgroundImage: `url("${photo}")` }}
-              />
-              <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
-              {/* Download icon on hover */}
-              <div className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/80 text-[#2D2D2D] opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
-                <span className="material-symbols-outlined text-[16px]">download</span>
-              </div>
-            </button>
-          ))}
-        </div>
+        {photos.length > 0 && (
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3">
+            {photos.map((photo, index) => (
+              <button
+                key={photo.id}
+                onClick={() => setLightboxIndex(index)}
+                className="group relative aspect-square overflow-hidden rounded-xl sm:rounded-2xl"
+              >
+                <div
+                  className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
+                  style={{ backgroundImage: `url("${photo.public_url}")` }}
+                />
+                <div className="absolute inset-0 bg-black/0 transition-colors group-hover:bg-black/10" />
+                {/* Download icon on hover */}
+                <div className="absolute bottom-2 right-2 flex h-8 w-8 items-center justify-center rounded-lg bg-white/80 text-[#2D2D2D] opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* ── Browse all link ────────────────────────── */}
@@ -109,18 +134,23 @@ export default function MyPhotosPage() {
             </button>
           )}
 
+          {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={photos[lightboxIndex]}
-            alt={`Your photo ${lightboxIndex + 1}`}
+            src={photos[lightboxIndex].public_url ?? ""}
+            alt={photos[lightboxIndex].original_filename ?? `Photo ${lightboxIndex + 1}`}
             className="max-h-[85vh] max-w-full rounded-2xl object-contain"
           />
 
           <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-4 rounded-2xl bg-black/40 px-5 py-2.5 text-sm text-white/80 backdrop-blur-sm sm:bottom-8">
             <span>{lightboxIndex + 1} / {photos.length}</span>
-            <button className="flex items-center gap-1.5 font-semibold text-white transition hover:text-[#F4A261]">
+            <a
+              href={photos[lightboxIndex].public_url ?? "#"}
+              download={photos[lightboxIndex].original_filename}
+              className="flex items-center gap-1.5 font-semibold text-white transition hover:text-[#F4A261]"
+            >
               <span className="material-symbols-outlined text-[18px]">download</span>
               Download
-            </button>
+            </a>
           </div>
         </div>
       )}

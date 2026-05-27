@@ -1,111 +1,220 @@
-export type EventStatus = "Live matching" | "Processing" | "Ready";
+// ============================================================
+// dashboard-data.ts — Async Supabase data access layer
+// All functions are server-side only (use server Supabase client)
+// ============================================================
+import { createClient } from "@/lib/supabase/server";
+import type { Event, EventPhoto, Guest } from "@/types/database";
 
-export type EventRecord = {
-  id: string;
-  name: string;
-  venue: string;
-  date: string;
-  cover: string;
-  photos: number;
-  guests: number;
-  matches: number;
-  status: EventStatus;
-  progress: number;
-  qrActive: boolean;
-};
+// Re-export types for convenience
+export type { Event as EventRecord, EventPhoto, Guest };
 
-export const dashboardEvents: EventRecord[] = [
-  {
-    id: "lake-como-wedding",
-    name: "Lake Como Celebration",
-    venue: "Villa Erba, Lake Como",
-    date: "May 24, 2026",
-    cover:
-      "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=1200&q=80",
-    photos: 2480,
-    guests: 184,
-    matches: 1206,
-    status: "Live matching",
-    progress: 92,
-    qrActive: true,
-  },
-  {
-    id: "atelier-launch",
-    name: "Atelier Product Launch",
-    venue: "Soho Studio, London",
-    date: "May 20, 2026",
-    cover:
-      "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80",
-    photos: 1642,
-    guests: 328,
-    matches: 987,
-    status: "Ready",
-    progress: 100,
-    qrActive: true,
-  },
-  {
-    id: "founders-retreat",
-    name: "Founders Retreat",
-    venue: "Aman Kyoto, Japan",
-    date: "June 03, 2026",
-    cover:
-      "https://images.unsplash.com/photo-1527529482837-4698179dc6ce?auto=format&fit=crop&w=1200&q=80",
-    photos: 384,
-    guests: 42,
-    matches: 126,
-    status: "Processing",
-    progress: 46,
-    qrActive: false,
-  },
-];
+// -------------------------------------------------------
+// Events
+// -------------------------------------------------------
 
-export const activityFeed = [
-  {
-    title: "248 photos uploaded",
-    detail: "Lake Como Celebration - 2 min ago",
-    icon: "upload_file",
-  },
-  {
-    title: "12 guests uploaded selfies",
-    detail: "Atelier Product Launch - 18 min ago",
-    icon: "face",
-  },
-  {
-    title: "AI processing complete",
-    detail: "1,206 matches made available - 43 min ago",
-    icon: "auto_awesome",
-  },
-  {
-    title: "WhatsApp notifications sent",
-    detail: "87 guests reached - 1 hour ago",
-    icon: "forum",
-  },
-];
+/**
+ * Fetch all events owned by the current authenticated user.
+ */
+export async function fetchEvents(): Promise<Event[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
-export const eventActivity = [
-  "248 original files received from Camera 03",
-  "AI grouped 64 new faces with confirmed guests",
-  "WhatsApp delivery completed for 87 guests",
-  "QR access opened for reception gallery",
-];
+  if (!user) return [];
 
-export const attendeeRows = [
-  { name: "Amelia Stone", phone: "+44 7700 900 123", matches: 28, status: "Delivered", lastActive: "2 min ago" },
-  { name: "Theo Parker", phone: "+44 7700 900 412", matches: 14, status: "Ready", lastActive: "11 min ago" },
-  { name: "Maya Laurent", phone: "+33 6 12 34 56 78", matches: 31, status: "Delivered", lastActive: "22 min ago" },
-  { name: "Daniel Cho", phone: "+1 415 555 0141", matches: 0, status: "Waiting", lastActive: "38 min ago" },
-  { name: "Isla Bennett", phone: "+44 7700 900 811", matches: 19, status: "Ready", lastActive: "1 hour ago" },
-];
+  const { data, error } = await (supabase as ReturnType<typeof supabase.from> extends never ? never : typeof supabase)
+    .from("events")
+    .select("*")
+    .eq("owner_id", user.id)
+    .order("created_at", { ascending: false });
 
-export const galleryImages = [
-  "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1527529482837-4698179dc6ce?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1507504031003-b417219a0fde?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1519225421980-715cb0215aed?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=800&q=80",
-  "https://images.unsplash.com/photo-1519741497674-611481863552?auto=format&fit=crop&w=800&q=80",
-];
+  if (error) {
+    console.error("fetchEvents error:", (error as { message: string }).message);
+    return [];
+  }
 
-export function getEvent(eventId: string) {
-  return dashboardEvents.find((event) => event.id === eventId);
+  return (data ?? []) as unknown as Event[];
+}
+
+/**
+ * Fetch a single event by ID (owner-scoped for dashboard use).
+ */
+export async function fetchEvent(eventId: string): Promise<Event | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("events")
+    .select("*")
+    .eq("id", eventId)
+    .eq("owner_id", user.id)
+    .single();
+
+  if (error) {
+    console.error("fetchEvent error:", error.message);
+    return null;
+  }
+
+  return data as Event;
+}
+
+/**
+ * Create a new event for the current user.
+ */
+export async function createEvent(
+  payload: Omit<
+    Event,
+    "id" | "owner_id" | "created_at" | "updated_at" | "qr_active" | "status"
+  >
+): Promise<Event | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return null;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("events")
+    .insert({ ...payload, owner_id: user.id })
+    .select()
+    .single();
+
+  if (error) {
+    console.error("createEvent error:", error.message);
+    return null;
+  }
+
+  return data as Event;
+}
+
+// -------------------------------------------------------
+// Event Photos
+// -------------------------------------------------------
+
+/**
+ * Fetch all photos for an event (dashboard — owner-scoped).
+ */
+export async function fetchEventPhotos(eventId: string): Promise<EventPhoto[]> {
+  const supabase = await createClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("event_photos")
+    .select("*")
+    .eq("event_id", eventId)
+    .order("uploaded_at", { ascending: false });
+
+  if (error) {
+    console.error("fetchEventPhotos error:", error.message);
+    return [];
+  }
+
+  return (data ?? []) as EventPhoto[];
+}
+
+/**
+ * Insert a photo record after uploading to storage.
+ */
+export async function insertEventPhoto(
+  payload: Omit<EventPhoto, "id" | "uploaded_at">
+): Promise<EventPhoto | null> {
+  const supabase = await createClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("event_photos")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("insertEventPhoto error:", error.message);
+    return null;
+  }
+
+  return data as EventPhoto;
+}
+
+// -------------------------------------------------------
+// Guests
+// -------------------------------------------------------
+
+/**
+ * Fetch all guests for an event (dashboard — owner-scoped).
+ */
+export async function fetchGuests(eventId: string): Promise<Guest[]> {
+  const supabase = await createClient();
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("guests")
+    .select("*")
+    .eq("event_id", eventId)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("fetchGuests error:", error.message);
+    return [];
+  }
+
+  return (data ?? []) as Guest[];
+}
+
+// -------------------------------------------------------
+// Dashboard aggregate counts
+// -------------------------------------------------------
+
+export interface DashboardStats {
+  totalEvents: number;
+  totalPhotos: number;
+  totalGuests: number;
+}
+
+export async function fetchDashboardStats(): Promise<DashboardStats> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return { totalEvents: 0, totalPhotos: 0, totalGuests: 0 };
+
+  // Fetch event IDs owned by this user
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: events } = await (supabase as any)
+    .from("events")
+    .select("id")
+    .eq("owner_id", user.id);
+
+  const eventIds = ((events ?? []) as { id: string }[]).map((e) => e.id);
+
+  const [photosRes, guestsRes] = await Promise.all([
+    eventIds.length > 0
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (supabase as any)
+          .from("event_photos")
+          .select("id", { count: "exact", head: true })
+          .in("event_id", eventIds)
+      : Promise.resolve({ count: 0 }),
+    eventIds.length > 0
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ? (supabase as any)
+          .from("guests")
+          .select("id", { count: "exact", head: true })
+          .in("event_id", eventIds)
+      : Promise.resolve({ count: 0 }),
+  ]);
+
+  return {
+    totalEvents: eventIds.length,
+    totalPhotos: (photosRes as { count: number | null }).count ?? 0,
+    totalGuests: (guestsRes as { count: number | null }).count ?? 0,
+  };
 }

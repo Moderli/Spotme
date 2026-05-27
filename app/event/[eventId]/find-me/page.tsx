@@ -1,54 +1,107 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
+import { uploadGuestSelfie } from "@/lib/guest-data-client";
 
-type UploadStep = "idle" | "uploading" | "processing";
+type UploadStep = "idle" | "uploading" | "processing" | "done";
 
 export default function FindMePage() {
   const { eventId } = useParams<{ eventId: string }>();
   const router = useRouter();
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [step, setStep] = useState<UploadStep>("idle");
   const [uploadProgress, setUploadProgress] = useState(0);
   const [processingDots, setProcessingDots] = useState(0);
+  const [preview, setPreview] = useState<string | null>(null);
+  const [guestId, setGuestId] = useState<string | null>(null);
 
-  /* ── Simulate upload + processing ──────────────── */
-  const startUpload = () => {
+  useEffect(() => {
+    const stored = localStorage.getItem(`guest_id_${eventId}`);
+    setGuestId(stored);
+  }, [eventId]);
+
+  const handleFileSelect = async (file: File) => {
+    if (!file) return;
+
+    // Show preview
+    setPreview(URL.createObjectURL(file));
     setStep("uploading");
     setUploadProgress(0);
 
-    const uploadInterval = setInterval(() => {
-      setUploadProgress((prev) => {
-        if (prev >= 100) {
-          clearInterval(uploadInterval);
-          // Switch to processing
-          setStep("processing");
+    // Animate progress
+    let prog = 0;
+    const progressInterval = setInterval(() => {
+      prog = Math.min(prog + 12, 90);
+      setUploadProgress(prog);
+    }, 80);
 
-          // Animate processing dots
-          let dotCount = 0;
-          const dotInterval = setInterval(() => {
-            dotCount++;
-            setProcessingDots(dotCount % 4);
-          }, 400);
+    // Upload selfie to Supabase Storage
+    const supabase = createClient();
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const storagePath = `selfies/${eventId}/${Date.now()}.${ext}`;
 
-          // After processing, navigate to results
-          setTimeout(() => {
-            clearInterval(dotInterval);
-            router.push(`/event/${eventId}/my-photos`);
-          }, 3000);
+    const { error: uploadError } = await supabase.storage
+      .from("guest-selfies")
+      .upload(storagePath, file, { upsert: true });
 
-          return 100;
-        }
-        return prev + 8;
+    clearInterval(progressInterval);
+
+    if (uploadError) {
+      setStep("idle");
+      alert("Upload failed. Please try again.");
+      return;
+    }
+
+    setUploadProgress(100);
+
+    // Get public URL and save record
+    const { data: urlData } = supabase.storage.from("guest-selfies").getPublicUrl(storagePath);
+
+    if (guestId) {
+      await uploadGuestSelfie({
+        guest_id: guestId,
+        event_id: eventId,
+        storage_path: storagePath,
+        public_url: urlData.publicUrl,
       });
-    }, 100);
+    }
+
+    // Switch to processing animation
+    setStep("processing");
+    let dotCount = 0;
+    const dotInterval = setInterval(() => {
+      dotCount++;
+      setProcessingDots(dotCount % 4);
+    }, 400);
+
+    // After 3 seconds, redirect to my-photos
+    setTimeout(() => {
+      clearInterval(dotInterval);
+      setStep("done");
+      router.push(`/event/${eventId}/my-photos`);
+    }, 3000);
   };
 
   return (
     <div className="flex min-h-[calc(100vh-56px)] flex-col items-center justify-center px-5 py-10 sm:px-8">
       <div className="w-full max-w-sm">
+
+        {/* ── Hidden file input ─────────────────────── */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp,image/heic"
+          capture="user"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) handleFileSelect(file);
+          }}
+        />
 
         {/* ── Idle: Upload Zone ────────────────────── */}
         {step === "idle" && (
@@ -57,25 +110,33 @@ export default function FindMePage() {
               Find your photos
             </h1>
             <p className="mt-2 text-sm text-[#827970]">
-              Upload a selfie or any photo of yourself and we&apos;ll find all photos you appear in.
+              Upload a selfie and we&apos;ll find all photos you appear in.
             </p>
+
+            {!guestId && (
+              <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-700">
+                Please <Link href={`/event/${eventId}/verify`} className="font-semibold underline">register first</Link> before uploading a selfie.
+              </div>
+            )}
 
             {/* Upload circle */}
             <button
-              onClick={startUpload}
-              className="group mx-auto mt-8 flex h-48 w-48 flex-col items-center justify-center rounded-full border-[3px] border-dashed border-[#D67D5C]/30 bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] transition-all duration-300 hover:border-[#D67D5C]/60 hover:shadow-[0_0_40px_rgba(214,125,92,0.1)] active:scale-[0.97] sm:h-56 sm:w-56"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!guestId}
+              className="group mx-auto mt-8 flex h-48 w-48 flex-col items-center justify-center rounded-full border-[3px] border-dashed border-[#D67D5C]/30 bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] transition-all duration-300 hover:border-[#D67D5C]/60 hover:shadow-[0_0_40px_rgba(214,125,92,0.1)] active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed sm:h-56 sm:w-56"
             >
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#D67D5C]/10 text-[#B36144] transition-transform duration-300 group-hover:scale-110">
                 <span className="material-symbols-outlined text-[28px]">add_a_photo</span>
               </span>
               <p className="mt-3 text-sm font-semibold text-[#2D2D2D]">Tap to upload</p>
-              <p className="mt-1 text-[10px] text-[#A69C93]">or take a selfie</p>
+              <p className="mt-1 text-[10px] text-[#A69C93]">selfie or photo of yourself</p>
             </button>
 
             {/* Secondary option */}
             <button
-              onClick={startUpload}
-              className="mx-auto mt-5 flex h-11 items-center gap-2 rounded-xl border border-[#2D2D2D]/8 bg-white px-5 text-xs font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] active:scale-[0.98]"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!guestId}
+              className="mx-auto mt-5 flex h-11 items-center gap-2 rounded-xl border border-[#2D2D2D]/8 bg-white px-5 text-xs font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] active:scale-[0.98] disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-[18px]">photo_library</span>
               Choose from gallery
@@ -94,8 +155,12 @@ export default function FindMePage() {
         {/* ── Uploading ───────────────────────────── */}
         {step === "uploading" && (
           <div className="animate-fade-in text-center">
+            {preview && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="Selfie preview" className="mx-auto mb-6 h-24 w-24 rounded-full object-cover border-4 border-[#D67D5C]/20" />
+            )}
             {/* Circular progress */}
-            <div className="mx-auto flex h-40 w-40 items-center justify-center sm:h-48 sm:w-48">
+            <div className="mx-auto flex h-40 w-40 items-center justify-center sm:h-48 sm:w-48 relative">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
                 <circle cx="60" cy="60" r="54" fill="none" stroke="#EFE6DD" strokeWidth="6" />
                 <circle
@@ -121,7 +186,7 @@ export default function FindMePage() {
         )}
 
         {/* ── Processing ──────────────────────────── */}
-        {step === "processing" && (
+        {(step === "processing" || step === "done") && (
           <div className="animate-fade-in text-center">
             {/* Animated scanning icon */}
             <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-full bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] sm:h-48 sm:w-48">
@@ -132,7 +197,7 @@ export default function FindMePage() {
               </div>
             </div>
             <h2 className="mt-6 text-lg font-semibold">
-              Searching for you{".".repeat(processingDots)}
+              Searching for you{"...".slice(0, processingDots + 1)}
             </h2>
             <p className="mt-2 text-sm text-[#827970]">
               Scanning through event photos to find your moments.

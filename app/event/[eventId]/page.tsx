@@ -1,10 +1,8 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
-import { getGuestEvent, getGuestEventIds } from "@/lib/guest-data";
+import Link from "next/link";
+import { getGuestEvent, fetchGuestGallery } from "@/lib/guest-data-server";
 
-export function generateStaticParams() {
-  return getGuestEventIds().map((eventId) => ({ eventId }));
-}
+export const dynamic = "force-dynamic";
 
 export default async function EventLandingPage({
   params,
@@ -12,17 +10,25 @@ export default async function EventLandingPage({
   params: Promise<{ eventId: string }>;
 }) {
   const { eventId } = await params;
-  const event = getGuestEvent(eventId);
+  const [event, photos] = await Promise.all([
+    getGuestEvent(eventId),
+    fetchGuestGallery(eventId),
+  ]);
+
   if (!event) notFound();
 
   return (
     <div className="min-h-[calc(100vh-56px)]">
       {/* ── Hero Cover ─────────────────────────────── */}
       <div className="relative h-[55vh] min-h-[340px] sm:h-[60vh] sm:min-h-[420px]">
-        <div
-          className="absolute inset-0 bg-cover bg-center"
-          style={{ backgroundImage: `url("${event.cover}")` }}
-        />
+        {event.cover_url ? (
+          <div
+            className="absolute inset-0 bg-cover bg-center"
+            style={{ backgroundImage: `url("${event.cover_url}")` }}
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-[#D67D5C]/30 to-[#F4A261]/20" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-[#1A1714] via-[#1A1714]/40 to-transparent" />
 
         {/* Event info overlay */}
@@ -35,14 +41,18 @@ export default async function EventLandingPage({
               {event.name}
             </h1>
             <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/70">
-              <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">calendar_today</span>
-                {event.date}
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-[16px]">location_on</span>
-                {event.venue}
-              </span>
+              {event.event_date && (
+                <span className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">calendar_today</span>
+                  {new Date(event.event_date).toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })}
+                </span>
+              )}
+              {event.venue && (
+                <span className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-[16px]">location_on</span>
+                  {event.venue}
+                </span>
+              )}
             </div>
           </div>
         </div>
@@ -51,31 +61,20 @@ export default async function EventLandingPage({
       {/* ── Action Card ────────────────────────────── */}
       <div className="relative -mt-8 px-5 sm:px-8">
         <div className="mx-auto max-w-lg rounded-[28px] border border-[#2D2D2D]/6 bg-white/80 p-6 shadow-[0_20px_60px_rgba(45,45,45,0.08)] backdrop-blur-2xl sm:p-8">
-          {/* Guest count */}
-          <div className="mb-6 flex items-center gap-3">
-            <div className="flex -space-x-2">
-              {["A", "T", "M"].map((letter, i) => (
-                <span
-                  key={letter}
-                  className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-white text-[10px] font-bold text-white"
-                  style={{
-                    background: ["#D67D5C", "#F4A261", "#C46A4A"][i],
-                    zIndex: 3 - i,
-                  }}
-                >
-                  {letter}
-                </span>
-              ))}
+          {/* Photo count badge */}
+          {photos.length > 0 && (
+            <div className="mb-6 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#FDF8F1] to-[#FFF3EB] px-4 py-3">
+              <span className="material-symbols-outlined text-[18px] text-[#D67D5C]">photo_library</span>
+              <p className="text-sm text-[#574F49]">
+                <span className="font-semibold text-[#2D2D2D]">{photos.length}</span> photos available to discover
+              </p>
             </div>
-            <p className="text-sm text-[#766D66]">
-              <span className="font-semibold text-[#2D2D2D]">{event.guests}</span> guests have joined
-            </p>
-          </div>
+          )}
 
           {/* How it works */}
           <div className="mb-6 space-y-3">
             {[
-              { step: "1", text: "Verify with WhatsApp", icon: "forum" },
+              { step: "1", text: "Enter your WhatsApp number", icon: "forum" },
               { step: "2", text: "Browse all event photos", icon: "photo_library" },
               { step: "3", text: "Upload a selfie to find your photos", icon: "face" },
             ].map((item) => (

@@ -1,12 +1,16 @@
 import { GalleryPanel } from "@/components/dashboard/workspace-panels";
-import { WorkspacePage, workspaceParams } from "@/components/dashboard/workspace-page";
+import { WorkspacePage } from "@/components/dashboard/workspace-page";
+import { fetchEventPhotos } from "@/lib/dashboard-data";
 
-export function generateStaticParams() {
-  return workspaceParams();
-}
+export const dynamic = "force-dynamic";
 
-export default async function GalleryPage({ params }: PageProps<"/dashboard/events/[eventId]/gallery">) {
+export default async function GalleryPage({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}) {
   const { eventId } = await params;
+  const photos = await fetchEventPhotos(eventId);
 
   return (
     <WorkspacePage
@@ -16,7 +20,7 @@ export default async function GalleryPage({ params }: PageProps<"/dashboard/even
       title="Event photographs"
       detail="Curate, search and review the images guests are discovering from this event."
     >
-      <GalleryPanel />
+      <GalleryPanel photos={photos} />
     </WorkspacePage>
   );
 }

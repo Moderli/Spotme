@@ -1,29 +1,46 @@
 import { EventOverviewPanel } from "@/components/dashboard/workspace-panels";
-import { WorkspacePage, workspaceParams } from "@/components/dashboard/workspace-page";
-import { getEvent } from "@/lib/dashboard-data";
+import { WorkspacePage } from "@/components/dashboard/workspace-page";
+import { fetchEvent, fetchEventPhotos, fetchGuests } from "@/lib/dashboard-data";
+import { notFound } from "next/navigation";
+import Link from "next/link";
 
-export function generateStaticParams() {
-  return workspaceParams();
-}
+export const dynamic = "force-dynamic";
 
-export default async function EventOverviewPage({ params }: PageProps<"/dashboard/events/[eventId]">) {
+export default async function EventOverviewPage({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}) {
   const { eventId } = await params;
-  const event = getEvent(eventId);
+  const [event, photos, guests] = await Promise.all([
+    fetchEvent(eventId),
+    fetchEventPhotos(eventId),
+    fetchGuests(eventId),
+  ]);
+
+  if (!event) notFound();
 
   return (
     <WorkspacePage
       eventId={eventId}
       activePath=""
       eyebrow="Event Overview"
-      title={event?.name ?? "Event"}
+      title={event.name}
       detail="Monitor guest photo discovery and delivery while preserving a calm, focused workflow."
       action={
-        <button className="rounded-xl bg-[#D67D5C] px-5 py-3 text-sm font-semibold text-white">
+        <Link
+          href={`/dashboard/events/${eventId}/uploads`}
+          className="rounded-xl bg-[#D67D5C] px-5 py-3 text-sm font-semibold text-white hover:bg-[#C46A4A] transition"
+        >
           Upload photos
-        </button>
+        </Link>
       }
     >
-      {event && <EventOverviewPanel event={event} />}
+      <EventOverviewPanel
+        event={event}
+        photoCount={photos.length}
+        guestCount={guests.length}
+      />
     </WorkspacePage>
   );
 }

@@ -1,14 +1,22 @@
 import { QrPanel } from "@/components/dashboard/workspace-panels";
-import { WorkspacePage, workspaceParams } from "@/components/dashboard/workspace-page";
-import { getEvent } from "@/lib/dashboard-data";
+import { WorkspacePage } from "@/components/dashboard/workspace-page";
+import { fetchEvent, fetchGuests } from "@/lib/dashboard-data";
+import { notFound } from "next/navigation";
 
-export function generateStaticParams() {
-  return workspaceParams();
-}
+export const dynamic = "force-dynamic";
 
-export default async function QrAccessPage({ params }: PageProps<"/dashboard/events/[eventId]/qr">) {
+export default async function QrAccessPage({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}) {
   const { eventId } = await params;
-  const event = getEvent(eventId);
+  const [event, guests] = await Promise.all([
+    fetchEvent(eventId),
+    fetchGuests(eventId),
+  ]);
+
+  if (!event) notFound();
 
   return (
     <WorkspacePage
@@ -18,7 +26,7 @@ export default async function QrAccessPage({ params }: PageProps<"/dashboard/eve
       title="Share event access"
       detail="Place this QR code at the venue so guests move directly from scan to selfie-based discovery."
     >
-      {event && <QrPanel event={event} />}
+      <QrPanel event={event} guestCount={guests.length} />
     </WorkspacePage>
   );
 }

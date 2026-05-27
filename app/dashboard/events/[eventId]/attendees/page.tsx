@@ -1,22 +1,26 @@
 import { AttendeesPanel } from "@/components/dashboard/workspace-panels";
-import { WorkspacePage, workspaceParams } from "@/components/dashboard/workspace-page";
+import { WorkspacePage } from "@/components/dashboard/workspace-page";
+import { fetchGuests } from "@/lib/dashboard-data";
 
-export function generateStaticParams() {
-  return workspaceParams();
-}
+export const dynamic = "force-dynamic";
 
-export default async function AttendeesPage({ params }: PageProps<"/dashboard/events/[eventId]/attendees">) {
+export default async function AttendeesPage({
+  params,
+}: {
+  params: Promise<{ eventId: string }>;
+}) {
   const { eventId } = await params;
+  const guests = await fetchGuests(eventId);
 
   return (
     <WorkspacePage
       eventId={eventId}
       activePath="/attendees"
       eyebrow="Attendees"
-      title="Guest matching status"
-      detail="Track verified guests, WhatsApp delivery and the photos each attendee has discovered."
+      title="Guest directory"
+      detail="View all registered guests and their WhatsApp numbers."
     >
-      <AttendeesPanel />
+      <AttendeesPanel guests={guests} />
     </WorkspacePage>
   );
 }
