@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdmin, fetchAdminStats, fetchAllEvents } from "@/lib/admin-data";
+import { requireAdmin, fetchAdminStats, fetchAllEvents, fetchAllChartData } from "@/lib/admin-data";
 
 export async function GET() {
   const supabase = await createClient();
@@ -10,10 +10,11 @@ export async function GET() {
   const isAdmin = await requireAdmin(user.id);
   if (!isAdmin) return NextResponse.json({ error: "Forbidden" }, { status: 403 });
 
-  const [stats, events] = await Promise.all([
+  const [stats, events, chartData] = await Promise.all([
     fetchAdminStats(),
     fetchAllEvents(20),
+    fetchAllChartData(),
   ]);
 
-  return NextResponse.json({ stats, events });
+  return NextResponse.json({ stats, events, chartData });
 }
