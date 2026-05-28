@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
   }
 
   // Trigger background face indexing call to the Python AI service
-  const aiServiceUrl = process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000";
+  const aiServiceUrl = (process.env.NEXT_PUBLIC_AI_SERVICE_URL || "http://localhost:8000").replace(/\/+$/, "");
   if (data && data.public_url) {
     fetch(`${aiServiceUrl}/index`, {
       method: "POST",
