@@ -369,9 +369,9 @@ create policy "Anyone can view face embeddings from active events"
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values
   ('event-covers',  'event-covers',  true,  10485760,  array['image/jpeg','image/png','image/webp','image/heic']),
-  ('event-photos',  'event-photos',  false, 52428800,  array['image/jpeg','image/png','image/webp','image/heic','image/tiff']),
-  ('guest-selfies', 'guest-selfies', false, 10485760,  array['image/jpeg','image/png','image/webp','image/heic'])
-on conflict (id) do nothing;
+  ('event-photos',  'event-photos',  true,  52428800,  array['image/jpeg','image/png','image/webp','image/heic','image/tiff']),
+  ('guest-selfies', 'guest-selfies', true,  10485760,  array['image/jpeg','image/png','image/webp','image/heic'])
+on conflict (id) do update set public = excluded.public;
 
 -- -------------------------------------------------------
 -- Storage RLS Policies
