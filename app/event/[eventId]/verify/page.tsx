@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { registerGuest } from "@/lib/guest-data-client";
+import { registerGuest, getEventPrivacyMode } from "@/lib/guest-data-client";
 
 type Step = "form" | "success";
 
@@ -40,9 +40,12 @@ export default function VerifyPage() {
 
     setStep("success");
 
-    // Redirect to gallery after a brief success state
+    // Check privacy mode — redirect to find-me if enabled, otherwise gallery
+    const privacyMode = await getEventPrivacyMode(eventId);
     setTimeout(() => {
-      router.push(`/event/${eventId}/gallery`);
+      router.push(privacyMode
+        ? `/event/${eventId}/find-me`
+        : `/event/${eventId}/gallery`);
     }, 1500);
   };
 
@@ -152,7 +155,7 @@ export default function VerifyPage() {
               <span className="material-symbols-outlined text-[28px] text-[#D67D5C]">check</span>
             </div>
             <h2 className="mt-6 text-lg font-semibold">Welcome, {name}!</h2>
-            <p className="mt-2 text-sm text-[#827970]">Taking you to the gallery...</p>
+            <p className="mt-2 text-sm text-[#827970]">Taking you to your photos...</p>
           </div>
         )}
       </div>
