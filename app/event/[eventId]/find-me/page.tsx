@@ -26,45 +26,73 @@ export default function FindMePage() {
   const handleFileSelect = async (file: File) => {
     if (!file) return;
 
-    // Show preview
     setPreview(URL.createObjectURL(file));
     setStep("uploading");
     setUploadProgress(0);
 
-    // Animate progress (slow — real upload happens server-side)
+    // Slow progress animation while we wait for the upload
     let prog = 0;
     const progressInterval = setInterval(() => {
-      prog = Math.min(prog + 5, 80);
+      prog = Math.min(prog + 3, 85);
       setUploadProgress(prog);
-    }, 120);
+    }, 150);
 
     try {
-      // ✅ Upload via server-side API route
-      // Uses SUPABASE_SERVICE_ROLE_KEY → bypasses all anon RLS/bucket policy issues
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("eventId", eventId);
-      if (guestId) formData.append("guestId", guestId);
-
-      const res = await fetch("/api/selfie/upload", {
+      // ── Step 1: Ask the server for a signed upload URL ──────────────
+      // This is a tiny JSON request (no file) so it never hits the 4.5MB limit
+      const ext = (file.name.split(".").pop() ?? "jpg").toLowerCase();
+      const urlRes = await fetch("/api/selfie/upload-url", {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId, ext }),
       });
 
-      clearInterval(progressInterval);
-
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        const msg = body?.error ?? `Server error ${res.status}`;
-        console.error("[find-me] Upload failed:", msg);
-        setStep("idle");
-        alert(`Upload failed: ${msg}`);
-        return;
+      if (!urlRes.ok) {
+        const body = await urlRes.json().catch(() => ({}));
+        throw new Error(body?.error ?? `Server error ${urlRes.status}`);
       }
 
+      const { signedUrl, storagePath } = (await urlRes.json()) as {
+        signedUrl: string;
+        storagePath: string;
+        token: string;
+      };
+
+      setUploadProgress(20);
+
+      // ── Step 2: PUT the file directly to Supabase (bypasses Vercel) ─
+      // The signed URL allows any size upload directly to the bucket.
+      const uploadRes = await fetch(signedUrl, {
+        method: "PUT",
+        headers: { "Content-Type": file.type || "image/jpeg" },
+        body: file,
+      });
+
+      if (!uploadRes.ok) {
+        const errText = await uploadRes.text().catch(() => "");
+        throw new Error(
+          `Storage upload failed (${uploadRes.status}): ${errText.slice(0, 200)}`
+        );
+      }
+
+      setUploadProgress(90);
+
+      // ── Step 3: Confirm — server saves the DB record ─────────────────
+      const confirmRes = await fetch("/api/selfie/confirm", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storagePath, guestId, eventId }),
+      });
+
+      if (!confirmRes.ok) {
+        // DB record failed but file is uploaded — log and continue
+        console.warn("[find-me] Confirm failed (non-fatal):", await confirmRes.text());
+      }
+
+      clearInterval(progressInterval);
       setUploadProgress(100);
 
-      // Switch to processing animation
+      // ── Step 4: Switch to processing animation ───────────────────────
       setStep("processing");
       let dotCount = 0;
       const dotInterval = setInterval(() => {
@@ -72,7 +100,6 @@ export default function FindMePage() {
         setProcessingDots(dotCount % 4);
       }, 400);
 
-      // After 3 seconds, redirect to my-photos
       setTimeout(() => {
         clearInterval(dotInterval);
         setStep("done");
@@ -81,7 +108,7 @@ export default function FindMePage() {
     } catch (err) {
       clearInterval(progressInterval);
       const msg = err instanceof Error ? err.message : "Network error";
-      console.error("[find-me] Upload exception:", msg);
+      console.error("[find-me] Upload error:", msg);
       setStep("idle");
       alert(`Upload failed: ${msg}`);
     }
@@ -91,7 +118,7 @@ export default function FindMePage() {
     <div className="flex min-h-[calc(100vh-56px)] flex-col items-center justify-center px-5 py-10 sm:px-8">
       <div className="w-full max-w-sm">
 
-        {/* ── Hidden camera input (opens front camera on mobile) ── */}
+        {/* ── Hidden camera input (opens front camera on mobile) ─────── */}
         <input
           ref={cameraInputRef}
           type="file"
@@ -101,7 +128,6 @@ export default function FindMePage() {
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) handleFileSelect(file);
-            // Reset so the same photo can be re-selected after an error
             e.target.value = "";
           }}
         />
@@ -119,7 +145,7 @@ export default function FindMePage() {
           }}
         />
 
-        {/* ── Idle: Upload Zone ────────────────────── */}
+        {/* ── Idle: Upload Zone ─────────────────────────────────────── */}
         {step === "idle" && (
           <div className="animate-fade-in text-center">
             <h1 className="text-xl font-semibold tracking-tight sm:text-2xl">
@@ -131,7 +157,14 @@ export default function FindMePage() {
 
             {!guestId && (
               <div className="mt-4 rounded-2xl bg-amber-50 border border-amber-200 px-4 py-3 text-xs text-amber-700">
-                Please <Link href={`/event/${eventId}/verify`} className="font-semibold underline">register first</Link> before uploading a selfie.
+                Please{" "}
+                <Link
+                  href={`/event/${eventId}/verify`}
+                  className="font-semibold underline"
+                >
+                  register first
+                </Link>{" "}
+                before uploading a selfie.
               </div>
             )}
 
@@ -148,7 +181,7 @@ export default function FindMePage() {
               <p className="mt-1 text-[10px] text-[#A69C93]">opens your camera</p>
             </button>
 
-            {/* Secondary option — opens gallery/photo library */}
+            {/* Secondary button — opens photo library */}
             <button
               onClick={() => galleryInputRef.current?.click()}
               disabled={!guestId}
@@ -168,14 +201,17 @@ export default function FindMePage() {
           </div>
         )}
 
-        {/* ── Uploading ───────────────────────────── */}
+        {/* ── Uploading ─────────────────────────────────────────────── */}
         {step === "uploading" && (
           <div className="animate-fade-in text-center">
             {preview && (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="Selfie preview" className="mx-auto mb-6 h-24 w-24 rounded-full object-cover border-4 border-[#D67D5C]/20" />
+              <img
+                src={preview}
+                alt="Selfie preview"
+                className="mx-auto mb-6 h-24 w-24 rounded-full object-cover border-4 border-[#D67D5C]/20"
+              />
             )}
-            {/* Circular progress */}
             <div className="mx-auto flex h-40 w-40 items-center justify-center sm:h-48 sm:w-48 relative">
               <svg className="h-full w-full -rotate-90" viewBox="0 0 120 120">
                 <circle cx="60" cy="60" r="54" fill="none" stroke="#EFE6DD" strokeWidth="6" />
@@ -185,7 +221,7 @@ export default function FindMePage() {
                   strokeLinecap="round"
                   strokeDasharray={`${2 * Math.PI * 54}`}
                   strokeDashoffset={`${2 * Math.PI * 54 * (1 - uploadProgress / 100)}`}
-                  className="transition-all duration-200"
+                  className="transition-all duration-300"
                 />
                 <defs>
                   <linearGradient id="warmGradient" x1="0%" y1="0%" x2="100%" y2="0%">
@@ -194,22 +230,25 @@ export default function FindMePage() {
                   </linearGradient>
                 </defs>
               </svg>
-              <span className="absolute text-2xl font-bold text-[#2D2D2D]">{uploadProgress}%</span>
+              <span className="absolute text-2xl font-bold text-[#2D2D2D]">
+                {uploadProgress}%
+              </span>
             </div>
             <h2 className="mt-4 text-lg font-semibold">Uploading your photo</h2>
             <p className="mt-1 text-sm text-[#827970]">Almost there...</p>
           </div>
         )}
 
-        {/* ── Processing ──────────────────────────── */}
+        {/* ── Processing ─────────────────────────────────────────────── */}
         {(step === "processing" || step === "done") && (
           <div className="animate-fade-in text-center">
-            {/* Animated scanning icon */}
             <div className="mx-auto flex h-40 w-40 items-center justify-center rounded-full bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] sm:h-48 sm:w-48">
               <div className="relative flex h-20 w-20 items-center justify-center">
                 <span className="absolute inset-0 animate-ping rounded-full bg-[#D67D5C]/10" />
                 <span className="absolute inset-2 animate-pulse rounded-full bg-[#D67D5C]/5" />
-                <span className="material-symbols-outlined text-[36px] text-[#D67D5C]">face_retouching_natural</span>
+                <span className="material-symbols-outlined text-[36px] text-[#D67D5C]">
+                  face_retouching_natural
+                </span>
               </div>
             </div>
             <h2 className="mt-6 text-lg font-semibold">

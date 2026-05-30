@@ -1,0 +1,59 @@
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+// Server-side admin client — uses service role key
+const adminSupabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { persistSession: false } }
+);
+
+/**
+ * POST /api/selfie/upload-url
+ *
+ * Returns a short-lived signed upload URL so the browser can PUT the file
+ * directly to Supabase Storage — completely bypassing Vercel's 4.5MB body limit.
+ *
+ * Body: { eventId: string, ext: string }
+ * Response: { signedUrl: string, storagePath: string, token: string }
+ */
+export async function POST(req: NextRequest) {
+  try {
+    const { eventId, ext: rawExt } = await req.json();
+
+    if (!eventId) {
+      return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
+    }
+
+    const safeExt = ["jpg", "jpeg", "png", "webp", "heic"].includes(
+      (rawExt ?? "jpg").toLowerCase()
+    )
+      ? (rawExt as string).toLowerCase()
+      : "jpg";
+
+    const storagePath = `selfies/${eventId}/${Date.now()}.${safeExt}`;
+
+    // Create a signed URL valid for 5 minutes — enough for any upload
+    const { data, error } = await adminSupabase.storage
+      .from("guest-selfies")
+      .createSignedUploadUrl(storagePath);
+
+    if (error || !data) {
+      console.error("[selfie/upload-url] Failed to create signed URL:", error);
+      return NextResponse.json(
+        { error: error?.message ?? "Could not create upload URL" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      signedUrl: data.signedUrl,
+      storagePath,
+      token: data.token,
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[selfie/upload-url] Unexpected:", message);
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
