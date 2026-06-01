@@ -38,8 +38,8 @@ export default async function EventOverviewPage({
     >
       <EventOverviewPanel
         event={event}
-        photoCount={photos.length}
-        guestCount={guests.length}
+        photos={photos}
+        guests={guests}
       />
     </WorkspacePage>
   );

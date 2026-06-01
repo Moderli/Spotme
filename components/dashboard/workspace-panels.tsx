@@ -37,39 +37,292 @@ function MiniStat({
    ═══════════════════════════════════════════════════ */
 export function EventOverviewPanel({
   event,
-  photoCount,
-  guestCount,
+  photos,
+  guests,
 }: {
   event: EventRecord;
-  photoCount: number;
-  guestCount: number;
+  photos: EventPhoto[];
+  guests: Guest[];
 }) {
+  const router = useRouter();
+  const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
+  const [selectedPhoto, setSelectedPhoto] = useState<EventPhoto | null>(null);
+  const [localPhotos, setLocalPhotos] = useState<EventPhoto[]>(photos);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(photos.length === 50);
+
+  useEffect(() => {
+    setLocalPhotos(photos);
+    setHasMore(photos.length === 50);
+  }, [photos]);
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const supabase = createClient();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase as any)
+        .from("event_photos")
+        .select("*")
+        .eq("event_id", event.id)
+        .order("uploaded_at", { ascending: false })
+        .range(localPhotos.length, localPhotos.length + 49);
+
+      if (!error && data) {
+        setLocalPhotos((prev) => [...prev, ...(data as EventPhoto[])]);
+        setHasMore(data.length === 50);
+      }
+    } catch (err) {
+      console.error("Failed to load more photos:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+
+  const formatBytes = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
+  const totalSizeBytes = localPhotos.reduce((acc, p) => acc + (p.file_size_bytes ?? 0), 0);
+  const totalSizeFormatted = formatBytes(totalSizeBytes);
+  const rootHref = `/dashboard/events/${event.id}`;
+
+  const filteredPhotos = localPhotos.filter((photo) =>
+    (photo.original_filename ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const handleDeletePhoto = async (photo: EventPhoto) => {
+    if (!confirm("Are you sure you want to permanently delete this photo?")) return;
+    setDeleteLoading(true);
+    try {
+      const supabase = createClient();
+      const { error: storageError } = await supabase.storage
+        .from("event-photos")
+        .remove([photo.storage_path]);
+        
+      if (storageError) {
+        console.error("Storage delete warning:", storageError.message);
+      }
+      
+      const { error: dbError } = await (supabase as any)
+        .from("event_photos")
+        .delete()
+        .eq("id", photo.id);
+        
+      if (dbError) {
+        throw new Error(dbError.message);
+      }
+      
+      setLocalPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      setSelectedPhoto(null);
+      router.refresh();
+    } catch (err: any) {
+      alert("Failed to delete photo: " + err.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-6">
       {/* Stats row */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 sm:gap-4">
-        <MiniStat label="Total uploads" value={photoCount.toLocaleString()} note="Photos in this event" icon="photo_camera" />
-        <MiniStat label="Guest joins" value={guestCount.toLocaleString()} note="Registered guests" icon="groups" />
+        <MiniStat label="Total uploads" value={localPhotos.length.toLocaleString()} note="Photos in this event" icon="photo_camera" />
+        <MiniStat label="Guest joins" value={guests.length.toLocaleString()} note="Registered guests" icon="groups" />
         <MiniStat label="QR Status" value={event.qr_active ? "Active" : "Paused"} note={event.qr_active ? "Guests can scan" : "QR paused"} icon="qr_code_2" />
       </div>
 
-      {/* Main info card */}
-      <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl sm:p-7">
-        <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">Event workspace</h2>
-        <p className="mt-1 text-xs text-[#827970]">Monitor your photo archives and deliver photos to guests via QR code.</p>
-        <div className="mt-6 grid grid-cols-2 gap-2 sm:mt-8 sm:gap-3">
+      {/* Event Storage utilization */}
+      <section className="flex flex-col gap-4 rounded-2xl border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl sm:p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-3.5">
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#D67D5C]/10 text-[#D67D5C]">
+            <span className="material-symbols-outlined text-[20px]">cloud</span>
+          </span>
+          <div>
+            <h3 className="text-sm font-semibold text-[#2D2D2D]">Event Storage Allocation</h3>
+            <p className="mt-0.5 text-xs text-[#827970]">{totalSizeFormatted} utilized by {localPhotos.length} photos</p>
+          </div>
+        </div>
+        <div className="w-full sm:max-w-xs space-y-2">
+          <div className="flex items-center justify-between text-xs font-medium">
+            <span>Progress (Max 10 GB)</span>
+            <span>{((totalSizeBytes / (10 * 1024 * 1024 * 1024)) * 100).toFixed(1)}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-[#F0EBE4]">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#D67D5C] to-[#F4A261] transition-all"
+              style={{ width: `${Math.min(100, (totalSizeBytes / (10 * 1024 * 1024 * 1024)) * 100)}%` }}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Dynamic Folders Grid */}
+      <div>
+        <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-[#766D66]">Workspace Folders</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { label: "Files uploaded", value: photoCount.toLocaleString() },
-            { label: "Guests joined", value: guestCount.toLocaleString() },
-          ].map((item) => (
-            <div key={item.label} className="rounded-2xl bg-gradient-to-br from-[#FBF7F2] to-[#FFF6F1] p-4">
-              <p className="text-[10px] text-[#827970] sm:text-[11px]">{item.label}</p>
-              <p className="mt-1.5 text-base font-semibold sm:mt-2 sm:text-lg">{item.value}</p>
-            </div>
+            { name: "Event Photos", icon: "folder", count: `${localPhotos.length} items`, size: totalSizeFormatted, color: "text-[#D67D5C] bg-[#D67D5C]/8", href: `${rootHref}/gallery` },
+            { name: "Guest Database", icon: "folder_shared", count: `${guests.length} registered`, size: "WhatsApp active", color: "text-[#F4A261] bg-[#F4A261]/8", href: `${rootHref}/attendees` },
+            { name: "QR Access Code", icon: "qr_code_2", count: event.qr_active ? "Active" : "Paused", size: "Print material", color: "text-green-600 bg-green-50", href: `${rootHref}/qr` },
+            { name: "Workspace Settings", icon: "folder_open", count: "Branding & Privacy", size: "Config files", color: "text-slate-600 bg-slate-100", href: `${rootHref}/settings` },
+          ].map((folder) => (
+            <Link
+              key={folder.name}
+              href={folder.href}
+              className="group flex flex-col justify-between rounded-2xl border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-md transition-all duration-300 hover:-translate-y-1 hover:border-[#D67D5C]/35 hover:shadow-[0_12px_32px_rgba(214,125,92,0.08)]"
+            >
+              <div className="flex items-center justify-between">
+                <span className={`flex h-11 w-11 items-center justify-center rounded-xl ${folder.color} transition-transform duration-300 group-hover:scale-105`}>
+                  <span className="material-symbols-outlined text-[24px]">{folder.icon}</span>
+                </span>
+                <span className="material-symbols-outlined text-[18px] text-[#A69C93] opacity-0 transition-opacity duration-300 group-hover:opacity-100">arrow_forward</span>
+              </div>
+              <div className="mt-5">
+                <h4 className="text-sm font-semibold tracking-tight text-[#2D2D2D]">{folder.name}</h4>
+                <p className="mt-1 text-[11px] text-[#827970]">{folder.count} · {folder.size}</p>
+              </div>
+            </Link>
           ))}
         </div>
+      </div>
 
-        {/* Event details */}
+      {/* Dynamic File Explorer */}
+      <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl sm:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-[#2D2D2D]/5 pb-4 mb-5">
+          <div>
+            <h3 className="text-base font-semibold tracking-tight text-[#2D2D2D]">Files Explorer</h3>
+            <p className="mt-0.5 text-xs text-[#827970]">Interactive workspace for photo uploads and client delivery details.</p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Search Input */}
+            <label className="flex h-9 w-full sm:w-48 items-center gap-2 rounded-lg border border-[#2D2D2D]/8 bg-white/70 px-2.5 text-[#8E877F] focus-within:border-[#D67D5C]/40 focus-within:shadow-[0_0_0_3px_rgba(214,125,92,0.04)] transition-all">
+              <span className="material-symbols-outlined text-[16px]">search</span>
+              <input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search files..."
+                className="bg-transparent text-xs text-[#2D2D2D] outline-none placeholder:text-[#8E877F] w-full"
+              />
+              {searchQuery && (
+                <button onClick={() => setSearchQuery("")} className="text-[#8E877F] hover:text-[#2D2D2D]">
+                  <span className="material-symbols-outlined text-[14px]">close</span>
+                </button>
+              )}
+            </label>
+
+            {/* List / Grid View Toggles */}
+            <div className="flex items-center gap-0.5 rounded-lg bg-[#F0EBE4] p-0.5 border border-[#2D2D2D]/5">
+              <button
+                onClick={() => setViewMode("grid")}
+                title="Grid view"
+                className={`flex h-8 w-8 items-center justify-center rounded-md transition-all ${viewMode === "grid" ? "bg-white text-[#D67D5C] shadow-xs" : "text-[#827970] hover:bg-white/40"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">grid_view</span>
+              </button>
+              <button
+                onClick={() => setViewMode("list")}
+                title="List view"
+                className={`flex h-8 w-8 items-center justify-center rounded-md transition-all ${viewMode === "list" ? "bg-white text-[#D67D5C] shadow-xs" : "text-[#827970] hover:bg-white/40"}`}
+              >
+                <span className="material-symbols-outlined text-[18px]">list</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* File display */}
+        {filteredPhotos.length === 0 ? (
+          <div className="py-12 text-center text-[#827970] text-sm">
+            <span className="material-symbols-outlined text-3xl text-[#D67D5C]/30 block mb-2">image</span>
+            No matching files found.
+          </div>
+        ) : (
+          <div className="relative">
+            {viewMode === "grid" ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+                {filteredPhotos.map((photo) => (
+                  <div
+                    key={photo.id}
+                    onClick={() => setSelectedPhoto(photo)}
+                    className={`group relative aspect-square cursor-pointer overflow-hidden rounded-xl border border-[#2D2D2D]/5 transition-all hover:-translate-y-0.5 hover:shadow-md ${selectedPhoto?.id === photo.id ? "ring-2 ring-[#D67D5C]" : ""}`}
+                  >
+                    <div
+                      className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
+                      style={{ backgroundImage: `url("${photo.public_url}")` }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300" />
+                    <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
+                      <p className="truncate text-[10px] font-medium text-white">{photo.original_filename}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-[#2D2D2D]">
+                  <thead className="bg-gradient-to-r from-[#FCF9F5] to-[#FDF8F3] text-[10px] uppercase tracking-wider text-[#92877F]">
+                    <tr>
+                      <th className="px-4 py-3">File Name</th>
+                      <th className="px-4 py-3">File Size</th>
+                      <th className="px-4 py-3">Mime Type</th>
+                      <th className="px-4 py-3">Uploaded At</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredPhotos.map((photo) => (
+                      <tr
+                        key={photo.id}
+                        onClick={() => setSelectedPhoto(photo)}
+                        className={`border-b border-[#2D2D2D]/5 transition-colors cursor-pointer hover:bg-[#FDF8F1]/60 ${selectedPhoto?.id === photo.id ? "bg-[#FDF8F1] font-semibold" : ""}`}
+                      >
+                        <td className="px-4 py-3 font-medium flex items-center gap-2 truncate max-w-[200px]">
+                          <span className="material-symbols-outlined text-[16px] text-[#827970]">image</span>
+                          <span>{photo.original_filename}</span>
+                        </td>
+                        <td className="px-4 py-3 text-[#766D66]">{formatBytes(photo.file_size_bytes ?? 0)}</td>
+                        <td className="px-4 py-3 text-[#766D66]">{photo.mime_type ?? "image/jpeg"}</td>
+                        <td className="px-4 py-3 text-[#827970]">
+                          {new Date(photo.uploaded_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Load More button */}
+        {!searchQuery && hasMore && (
+          <div className="mt-5 flex justify-center">
+            <button
+              onClick={handleLoadMore}
+              disabled={loadingMore}
+              className="flex items-center gap-2 rounded-xl border border-[#2D2D2D]/8 bg-white px-6 py-2.5 text-xs font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] hover:border-[#D67D5C]/30 active:scale-[0.98] disabled:opacity-50"
+            >
+              {loadingMore ? (
+                <><span className="material-symbols-outlined text-[16px] animate-spin">sync</span> Loading...</>
+              ) : (
+                <><span className="material-symbols-outlined text-[16px]">add</span> Load 50 More Photos</>
+              )}
+            </button>
+          </div>
+        )}
+      </section>
+
+      {/* Main info card */}
+      <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl sm:p-7">
+        <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">Event workspace details</h2>
+        <p className="mt-1 text-xs text-[#827970]">Monitor your photo archives and deliver photos to guests via QR code.</p>
         <div className="mt-5 space-y-2 border-t border-[#2D2D2D]/5 pt-5">
           {event.venue && (
             <div className="flex items-center gap-2 text-xs text-[#827970]">
@@ -91,6 +344,101 @@ export function EventOverviewPanel({
           )}
         </div>
       </section>
+
+      {/* File Detail Sidebar (Slide-out panel) */}
+      {selectedPhoto && (
+        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm border-l border-[#2D2D2D]/8 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl flex-col animate-slide-in">
+          <div className="flex items-center justify-between border-b border-[#2D2D2D]/5 pb-4">
+            <h3 className="text-sm font-semibold text-[#2D2D2D] flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[18px]">info</span>
+              File Details
+            </h3>
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#FDF8F1] text-[#625D58] border border-[#2D2D2D]/5 transition"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+
+          <div className="mt-6 flex-1 overflow-y-auto space-y-5 pr-1">
+            {/* Image Preview */}
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPhoto.public_url || ""}
+                alt={selectedPhoto.original_filename || "Preview"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+
+            {/* Properties List */}
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">File name</p>
+                <p className="mt-1 font-medium text-[#2D2D2D] break-all">{selectedPhoto.original_filename}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Size</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{formatBytes(selectedPhoto.file_size_bytes ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Mime type</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{selectedPhoto.mime_type || "image/jpeg"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Uploaded</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">
+                  {new Date(selectedPhoto.uploaded_at).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Storage Path</p>
+                <p className="mt-1 text-[11px] font-mono text-[#827970] break-all">{selectedPhoto.storage_path}</p>
+              </div>
+            </div>
+
+            {/* Face matching metadata */}
+            <div className="rounded-xl bg-gradient-to-br from-[#FDF8F1] to-[#FFF6F1] p-4 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-[#B36144]">
+                <span className="material-symbols-outlined text-[16px]">face</span>
+                AI Face Matching Status
+              </div>
+              <p className="mt-1.5 text-[#827970] leading-relaxed">
+                This image has been indexed and is ready for facial recognition. Guests scanning the event QR can match and receive it instantly on WhatsApp.
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-6 flex gap-2 border-t border-[#2D2D2D]/5 pt-4 font-sans">
+            <a
+              href={selectedPhoto.public_url || ""}
+              download={selectedPhoto.original_filename || "download"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center rounded-xl border border-[#DED5CC] py-3 text-xs font-semibold text-[#625D58] hover:bg-[#FDF8F1] active:scale-[0.98] transition flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              Download
+            </a>
+            <button
+              onClick={() => handleDeletePhoto(selectedPhoto)}
+              disabled={deleteLoading}
+              className="flex-1 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 py-3 text-xs font-semibold text-red-600 active:scale-[0.98] transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {deleteLoading ? (
+                <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  Delete
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -282,25 +630,48 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
    Attendees Panel — Real guest data from Supabase
    ═══════════════════════════════════════════════════ */
 export function AttendeesPanel({ guests }: { guests: Guest[] }) {
+  const [search, setSearch] = useState("");
+
+  const filteredGuests = guests.filter((guest) =>
+    (guest.display_name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+    guest.phone.includes(search)
+  );
+
   return (
     <section className="overflow-hidden rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 backdrop-blur-xl">
       <div className="flex flex-col gap-3 border-b border-[#2D2D2D]/6 p-4 sm:flex-row sm:items-center sm:justify-between sm:p-6">
         <div>
           <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">Guest directory</h2>
-          <p className="mt-1 text-xs text-[#827970]">{guests.length} registered guests.</p>
+          <p className="mt-1 text-xs text-[#827970]">{filteredGuests.length} of {guests.length} registered guests.</p>
         </div>
+
+        {/* Search Bar */}
+        <label className="flex h-9 w-full sm:w-48 items-center gap-2 rounded-lg border border-[#2D2D2D]/8 bg-white/70 px-2.5 text-[#8E877F] focus-within:border-[#D67D5C]/40 transition-all">
+          <span className="material-symbols-outlined text-[16px]">search</span>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search guests..."
+            className="bg-transparent text-xs text-[#2D2D2D] outline-none placeholder:text-[#8E877F] w-full"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="text-[#8E877F] hover:text-[#2D2D2D]">
+              <span className="material-symbols-outlined text-[14px]">close</span>
+            </button>
+          )}
+        </label>
       </div>
 
-      {guests.length === 0 ? (
+      {filteredGuests.length === 0 ? (
         <div className="p-6 text-center text-sm text-[#827970]">
           <span className="material-symbols-outlined text-3xl text-[#D67D5C]/40 mb-2 block">groups</span>
-          No guests have registered yet. Share the QR code to get started.
+          {guests.length === 0 ? "No guests have registered yet. Share the QR code to get started." : "No guests match your search query."}
         </div>
       ) : (
         <>
           {/* Mobile card view */}
           <div className="divide-y divide-[#2D2D2D]/5 sm:hidden">
-            {guests.map((guest) => (
+            {filteredGuests.map((guest) => (
               <div key={guest.id} className="p-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
@@ -329,7 +700,7 @@ export function AttendeesPanel({ guests }: { guests: Guest[] }) {
                 </tr>
               </thead>
               <tbody>
-                {guests.map((guest) => (
+                {filteredGuests.map((guest) => (
                   <tr className="border-t border-[#2D2D2D]/5 transition-colors hover:bg-[#FDF8F1]/60" key={guest.id}>
                     <td className="px-6 py-4 sm:py-5">
                       <div className="flex items-center gap-3">
@@ -462,27 +833,42 @@ export function QrPanel({ event, guestCount }: { event: EventRecord; guestCount:
    Gallery Panel — Real photos from Supabase Storage
    ═══════════════════════════════════════════════════ */
 export function GalleryPanel({ photos }: { photos: EventPhoto[] }) {
+  const [search, setSearch] = useState("");
+
+  const filteredPhotos = photos.filter((photo) =>
+    (photo.original_filename ?? "").toLowerCase().includes(search.toLowerCase())
+  );
+
   return (
     <section>
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-2 sm:mb-5 sm:gap-3">
         <label className="flex h-10 min-w-0 flex-1 items-center gap-2 rounded-xl border border-[#DED5CC] bg-white/80 px-3 text-[#827970] backdrop-blur-sm sm:h-11 sm:min-w-56 sm:flex-initial sm:px-4">
           <span className="material-symbols-outlined text-[18px] sm:text-[19px]">search</span>
-          <input className="w-full bg-transparent text-sm outline-none" placeholder="Search gallery" />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-transparent text-sm outline-none"
+            placeholder="Search gallery"
+          />
+          {search && (
+            <button onClick={() => setSearch("")} className="text-[#8E877F] hover:text-[#2D2D2D]">
+              <span className="material-symbols-outlined text-[16px]">close</span>
+            </button>
+          )}
         </label>
-        <span className="text-xs text-[#827970]">{photos.length} photos</span>
+        <span className="text-xs text-[#827970]">{filteredPhotos.length} of {photos.length} photos</span>
       </div>
 
       {/* Masonry grid */}
-      {photos.length === 0 ? (
+      {filteredPhotos.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center text-[#827970]">
           <span className="material-symbols-outlined text-4xl text-[#D67D5C]/40 mb-3">photo_library</span>
-          <p className="text-sm">No photos uploaded yet.</p>
-          <p className="text-xs mt-1">Go to the Uploads tab to add photos.</p>
+          <p className="text-sm">No photos match your search.</p>
         </div>
       ) : (
         <div className="columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3">
-          {photos.map((photo, index) => (
+          {filteredPhotos.map((photo, index) => (
             <article
               key={photo.id}
               className={`group relative mb-3 overflow-hidden rounded-2xl sm:mb-4 ${index % 3 === 0 ? "h-[260px] sm:h-[330px]" : "h-[190px] sm:h-[235px]"}`}
@@ -539,6 +925,37 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
     await (supabase as any).from("events").update({ status: "archived", qr_active: false }).eq("id", event.id);
     router.push("/dashboard");
     router.refresh();
+  };
+
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
+  const handleDelete = async () => {
+    if (!confirm("Are you sure you want to PERMANENTLY delete this event? This will delete all event settings, photos, guest details, and matching data. This action is irreversible.")) return;
+    
+    // Double confirmation to make sure
+    const confirmName = prompt(`To confirm deletion, please type the event name: "${event.name}"`);
+    if (confirmName !== event.name) {
+      alert("Event name confirmation did not match. Deletion cancelled.");
+      return;
+    }
+    
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/events/${event.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete event");
+      }
+      alert("Event successfully deleted.");
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete event");
+    } finally {
+      setDeleteLoading(false);
+    }
   };
 
   const settings = [
@@ -654,6 +1071,20 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
           className="mt-5 w-full rounded-xl border border-[#D67D5C]/25 bg-white py-2.5 text-xs font-semibold text-[#B36144] transition hover:bg-[#FFF5F0] active:scale-[0.98] sm:mt-6 sm:py-3"
         >
           Archive event
+        </button>
+        <button
+          onClick={handleDelete}
+          disabled={deleteLoading}
+          className="mt-3 w-full rounded-xl bg-red-50 border border-red-200 py-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-100 active:scale-[0.98] sm:py-3 flex items-center justify-center gap-1.5 disabled:opacity-50"
+        >
+          {deleteLoading ? (
+            <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+          ) : (
+            <>
+              <span className="material-symbols-outlined text-[16px]">delete</span>
+              Delete event permanently
+            </>
+          )}
         </button>
       </section>
     </div>

@@ -1,4 +1,8 @@
+"use client";
+
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import type { Event as EventRecord } from "@/types/database";
 
 function formatCount(value: number) {
@@ -132,41 +136,90 @@ export function EventCard({ event, photoCount, guestCount }: { event: EventRecor
 /* ═══════════════════════════════════════════════════
    Events Grid — Event Cards Container
    ═══════════════════════════════════════════════════ */
-export function EventsGrid({
+function EventsGridContent({
   events,
   compact = false,
 }: {
-  events: EventRecord[];
+  events: Array<EventRecord & { photo_count?: number; guest_count?: number }>;
   compact?: boolean;
 }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const search = searchParams ? searchParams.get("search") || "" : "";
+
+  const handleSearch = (val: string) => {
+    const params = new URLSearchParams(window.location.search);
+    if (val) {
+      params.set("search", val);
+    } else {
+      params.delete("search");
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  const filteredEvents = events.filter((event) => {
+    const term = search.toLowerCase();
+    return (
+      event.name.toLowerCase().includes(term) ||
+      (event.venue ?? "").toLowerCase().includes(term)
+    );
+  });
+
   return (
-    <section>
-      <div className="mb-5 flex items-center justify-between">
+    <section className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-lg font-semibold tracking-[-0.045em] sm:text-xl">Events</h2>
           {!compact && <p className="mt-1 text-sm text-[#827970]">Active event workspaces and gallery delivery.</p>}
         </div>
-        {!compact && (
-          <Link href="/dashboard/events" className="text-sm font-medium text-[#B36144] transition hover:text-[#D67D5C]">
-            View all events
-          </Link>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {!compact && (
+            <Link href="/dashboard/events" className="text-sm font-medium text-[#B36144] transition hover:text-[#D67D5C]">
+              View all events
+            </Link>
+          )}
+        </div>
       </div>
 
-      {events.length === 0 ? (
+      {filteredEvents.length === 0 ? (
         <div className="flex flex-col items-center justify-center rounded-[26px] border border-dashed border-[#D67D5C]/30 bg-white/40 py-16 text-center">
           <span className="material-symbols-outlined text-4xl text-[#D67D5C]/40 mb-3">photo_library</span>
-          <p className="text-sm font-medium text-[#2D2D2D]">No events yet</p>
-          <p className="mt-1 text-xs text-[#827970]">Click "Create Event" to get started.</p>
+          <p className="text-sm font-medium text-[#2D2D2D]">
+            {events.length === 0 ? "No events yet" : "No matching events found"}
+          </p>
+          <p className="mt-1 text-xs text-[#827970]">
+            {events.length === 0 ? "Click 'Create Event' to get started." : "Try adjusting your search criteria."}
+          </p>
         </div>
       ) : (
-        <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3">
-          {events.map((event) => (
-            <EventCard event={event} key={event.id} />
+        <div className="grid gap-4 sm:gap-5 sm:grid-cols-2 xl:grid-cols-3 transition-all duration-300">
+          {filteredEvents.map((event) => (
+            <EventCard
+              event={event}
+              key={event.id}
+              photoCount={event.photo_count}
+              guestCount={event.guest_count}
+            />
           ))}
         </div>
       )}
     </section>
+  );
+}
+
+export function EventsGrid(props: {
+  events: Array<EventRecord & { photo_count?: number; guest_count?: number }>;
+  compact?: boolean;
+}) {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-12">
+        <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#2D2D2D]/10 border-t-[#D67D5C]" />
+      </div>
+    }>
+      <EventsGridContent {...props} />
+    </Suspense>
   );
 }
 

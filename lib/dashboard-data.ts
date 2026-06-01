@@ -15,7 +15,7 @@ export type { Event as EventRecord, EventPhoto, Guest };
 /**
  * Fetch all events owned by the current authenticated user.
  */
-export async function fetchEvents(): Promise<Event[]> {
+export async function fetchEvents(): Promise<(Event & { photo_count?: number; guest_count?: number })[]> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -23,9 +23,10 @@ export async function fetchEvents(): Promise<Event[]> {
 
   if (!user) return [];
 
-  const { data, error } = await (supabase as ReturnType<typeof supabase.from> extends never ? never : typeof supabase)
+  // Fetch events with related photo and guest IDs to count them
+  const { data, error } = await (supabase as any)
     .from("events")
-    .select("*")
+    .select("*, event_photos(id), guests(id)")
     .eq("owner_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -34,7 +35,14 @@ export async function fetchEvents(): Promise<Event[]> {
     return [];
   }
 
-  return (data ?? []) as unknown as Event[];
+  // Calculate counts in memory from returned relations
+  const eventsWithCounts = (data ?? []).map((event: any) => ({
+    ...event,
+    photo_count: event.event_photos?.length ?? 0,
+    guest_count: event.guests?.length ?? 0,
+  }));
+
+  return eventsWithCounts;
 }
 
 /**
@@ -100,9 +108,14 @@ export async function createEvent(
 // -------------------------------------------------------
 
 /**
- * Fetch all photos for an event (dashboard — owner-scoped).
+ * Fetch photos for an event (dashboard — owner-scoped).
+ * Defaults to first 50 photos; pass limit/offset for pagination.
  */
-export async function fetchEventPhotos(eventId: string): Promise<EventPhoto[]> {
+export async function fetchEventPhotos(
+  eventId: string,
+  limit = 50,
+  offset = 0
+): Promise<EventPhoto[]> {
   const supabase = await createClient();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +123,8 @@ export async function fetchEventPhotos(eventId: string): Promise<EventPhoto[]> {
     .from("event_photos")
     .select("*")
     .eq("event_id", eventId)
-    .order("uploaded_at", { ascending: false });
+    .order("uploaded_at", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (error) {
     console.error("fetchEventPhotos error:", error.message);

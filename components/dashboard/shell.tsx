@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useState, useEffect, useCallback, useRef } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { type ReactNode, useState, useEffect, useCallback, useRef, Suspense } from "react";
 import type { Event as EventRecord } from "@/types/database";
 import { createClient } from "@/lib/supabase/client";
 
@@ -43,10 +43,208 @@ function Brand({ collapsed }: { collapsed?: boolean }) {
 /* ── Profile Block ──────────────────────────────── */
 function ProfileBlock({ collapsed, userName }: { collapsed?: boolean; userName?: string }) {
   const router = useRouter();
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<{
+    email: string;
+    fullName: string;
+    plan: string;
+    storageUsedGB: number;
+    storageMaxGB: number;
+  } | null>(null);
+
   const initials = userName
     ? userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
     : "?";
   const displayName = userName ?? "Photographer";
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // Fetch profile details
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: profile } = await (supabase as any)
+            .from("profiles")
+            .select("full_name, plan, max_storage_gb")
+            .eq("id", user.id)
+            .single();
+
+          // Calculate storage size based on actual photo sizes
+          let totalBytes = 0;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: events } = await (supabase as any)
+            .from("events")
+            .select("id")
+            .eq("owner_id", user.id);
+          
+          if (events && events.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: photos } = await (supabase as any)
+              .from("event_photos")
+              .select("file_size_bytes")
+              .in("event_id", events.map((e: { id: string }) => e.id));
+            if (photos) {
+              totalBytes = photos.reduce((acc: number, p: { file_size_bytes: number | null }) => acc + (p.file_size_bytes ?? 0), 0);
+            }
+          }
+
+          setUserProfile({
+            email: user.email || "",
+            fullName: profile?.full_name || userName || user.email || "Photographer",
+            plan: profile?.plan || "free",
+            storageUsedGB: parseFloat((totalBytes / (1024 * 1024 * 1024)).toFixed(2)),
+            storageMaxGB: profile?.max_storage_gb || 10,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load user info:", err);
+      }
+    };
+    fetchProfile();
+  }, [userName]);
+
+  return (
+    <div ref={menuRef} className="relative mt-8">
+      {/* Profile trigger */}
+      <button
+        onClick={() => setMenuOpen(!menuOpen)}
+        className={`w-full flex items-center rounded-2xl border border-white/8 bg-white/[0.03] hover:bg-white/[0.07] backdrop-blur-md transition-all duration-300 group text-left ${collapsed ? "justify-center p-2.5" : "gap-3 p-3"}`}
+      >
+        <div className="relative shrink-0">
+          <span className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#F4A261] to-[#D67D5C] text-sm font-semibold text-white border border-white/20 shadow-md transition-transform duration-300 group-hover:scale-105">
+            {initials}
+          </span>
+        </div>
+        {!collapsed && (
+          <div className="min-w-0 flex-1 flex items-center justify-between">
+            <div className="truncate">
+              <p className="truncate text-sm font-semibold text-white tracking-wide">{userProfile?.fullName || displayName}</p>
+              <p className="text-[10px] text-white/50 flex items-center gap-1.5 mt-0.5 uppercase tracking-wider font-medium">
+                {userProfile?.plan === "unlimited" ? "Unlimited Plan" : userProfile?.plan === "pro" ? "Pro Member" : "Free Tier"}
+              </p>
+            </div>
+            <span className="material-symbols-outlined text-[20px] text-white/40 transition-transform duration-300 group-hover:translate-y-0.5">unfold_more</span>
+          </div>
+        )}
+      </button>
+
+      {/* Popover Dropdown Menu (Rising up inside Sidebar) */}
+      {menuOpen && (
+        <div className={`absolute bottom-full z-50 mb-2 w-64 rounded-2xl border border-white/10 bg-zinc-950/95 p-3 shadow-2xl backdrop-blur-2xl animate-page-enter ${collapsed ? "left-0" : "left-0 right-0"}`}>
+          <div className="px-2 py-1">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#D67D5C] text-xs font-semibold text-white border border-white/10">
+                {initials}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-white text-xs truncate">{userProfile?.fullName || displayName}</p>
+                <p className="text-[10px] text-white/50 truncate mt-0.5">{userProfile?.email || "photographer@revela.com"}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-3 space-y-0.5">
+            <Link
+              href="/dashboard/account"
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-2.5 rounded-xl px-3 py-2 text-xs text-white/70 hover:bg-white/[0.05] hover:text-white transition group"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#F4A261] transition group-hover:rotate-45">tune</span>
+              Account Settings
+            </Link>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Navbar Profile ─────────────────────────────── */
+function NavbarProfile({ userName }: { userName?: string }) {
+  const router = useRouter();
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [userProfile, setUserProfile] = useState<{
+    email: string;
+    fullName: string;
+    plan: string;
+    storageUsedGB: number;
+    storageMaxGB: number;
+  } | null>(null);
+
+  const initials = userName
+    ? userName.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2)
+    : "?";
+  const displayName = userName ?? "Photographer";
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const fetchProfile = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: profile } = await (supabase as any)
+            .from("profiles")
+            .select("full_name, plan, max_storage_gb")
+            .eq("id", user.id)
+            .single();
+
+          let totalBytes = 0;
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { data: events } = await (supabase as any)
+            .from("events")
+            .select("id")
+            .eq("owner_id", user.id);
+          
+          if (events && events.length > 0) {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const { data: photos } = await (supabase as any)
+              .from("event_photos")
+              .select("file_size_bytes")
+              .in("event_id", events.map((e: { id: string }) => e.id));
+            if (photos) {
+              totalBytes = photos.reduce((acc: number, p: { file_size_bytes: number | null }) => acc + (p.file_size_bytes ?? 0), 0);
+            }
+          }
+
+          setUserProfile({
+            email: user.email || "",
+            fullName: profile?.full_name || userName || user.email || "Photographer",
+            plan: profile?.plan || "free",
+            storageUsedGB: parseFloat((totalBytes / (1024 * 1024 * 1024)).toFixed(2)),
+            storageMaxGB: profile?.max_storage_gb || 10,
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load user info:", err);
+      }
+    };
+    fetchProfile();
+  }, [userName]);
 
   const handleSignOut = async () => {
     const supabase = createClient();
@@ -56,28 +254,83 @@ function ProfileBlock({ collapsed, userName }: { collapsed?: boolean; userName?:
   };
 
   return (
-    <div className={`mt-8 flex items-center rounded-2xl border border-white/8 bg-white/[0.04] backdrop-blur-sm transition-all duration-300 ${collapsed ? "justify-center p-2.5" : "gap-3 p-3 hover:bg-white/[0.07]"}`}>
+    <div ref={dropdownRef} className="relative hidden sm:block">
       <button
-        onClick={handleSignOut}
-        title="Sign out"
-        className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#F4A261]/25 to-[#D67D5C]/15 text-sm font-semibold text-[#F4A261] hover:opacity-80 transition"
+        onClick={() => setDropdownOpen(!dropdownOpen)}
+        className="flex h-10 w-10 sm:h-11 sm:w-11 items-center justify-center rounded-full bg-gradient-to-br from-[#D67D5C] to-amber-500 text-xs font-semibold text-white shadow-md border border-[#2D2D2D]/10 cursor-pointer transition hover:scale-105 hover:shadow-lg active:scale-95 duration-200"
       >
         {initials}
       </button>
-      {!collapsed && (
-        <>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium text-white">{displayName}</p>
-            <p className="text-xs text-white/45">Photographer</p>
+
+      {dropdownOpen && (
+        <div className="absolute right-0 top-full mt-2.5 z-50 w-64 rounded-2xl border border-[#2D2D2D]/8 bg-white/95 p-3 shadow-xl backdrop-blur-2xl animate-page-enter">
+          <div className="border-b border-[#2D2D2D]/6 pb-3 px-2 py-1">
+            <div className="flex items-center gap-2.5">
+              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#D67D5C] text-xs font-semibold text-white border border-[#2D2D2D]/5">
+                {initials}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-[#2D2D2D] text-xs truncate">{userProfile?.fullName || displayName}</p>
+                <p className="text-[10px] text-[#766D66] truncate mt-0.5">{userProfile?.email || "photographer@revela.com"}</p>
+              </div>
+            </div>
+            <div className="mt-2.5 flex items-center justify-between">
+              <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 border border-orange-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-600">
+                {userProfile?.plan ? `${userProfile.plan.toUpperCase()} PLAN` : "FREE PLAN"}
+              </span>
+              <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Active Pro
+              </span>
+            </div>
           </div>
-          <button
-            onClick={handleSignOut}
-            title="Sign out"
-            className="shrink-0 rounded-xl bg-white/5 border border-white/10 px-2.5 py-1 text-[10px] font-semibold text-white/60 hover:bg-white/10 hover:text-white transition"
-          >
-            Sign out
-          </button>
-        </>
+
+          {/* Premium Billing / Storage Overview */}
+          <div className="mt-3 rounded-xl bg-[#FDF8F1] p-3 border border-[#2D2D2D]/5">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-[#766D66]">Cloud Usage</span>
+              <span className="text-[9px] font-bold text-[#2D2D2D]">
+                {userProfile ? `${Math.round((userProfile.storageUsedGB / userProfile.storageMaxGB) * 100)}%` : "0%"}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-[#EFE6DD]">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] transition-all duration-500"
+                style={{ width: userProfile ? `${(userProfile.storageUsedGB / userProfile.storageMaxGB) * 100}%` : "0%" }}
+              />
+            </div>
+            <p className="mt-2 text-[9px] text-[#766D66] flex items-center justify-between">
+              <span>{userProfile ? `${userProfile.storageUsedGB} GB` : "0 GB"} of {userProfile?.storageMaxGB || 10} GB</span>
+              <Link href="/dashboard/storage" onClick={() => setDropdownOpen(false)} className="font-semibold text-[#D67D5C] hover:underline">Manage</Link>
+            </p>
+          </div>
+
+          <div className="mt-2.5 space-y-0.5">
+            <Link
+              href="/dashboard/account"
+              onClick={() => setDropdownOpen(false)}
+              className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-[#574F49] hover:bg-[#FDF8F1] transition group"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#766D66] transition group-hover:rotate-45">tune</span>
+              Account Settings
+            </Link>
+            <Link
+              href="/dashboard/storage"
+              onClick={() => setDropdownOpen(false)}
+              className="flex items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-[#574F49] hover:bg-[#FDF8F1] transition group"
+            >
+              <span className="material-symbols-outlined text-[16px] text-[#766D66] transition group-hover:scale-110">cloud</span>
+              Storage Overview
+            </Link>
+            <button
+              onClick={handleSignOut}
+              className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-xs text-red-600 hover:bg-red-50 transition text-left group"
+            >
+              <span className="material-symbols-outlined text-[16px] transition group-hover:-translate-x-0.5">logout</span>
+              Sign Out
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -145,6 +398,42 @@ function SidebarOverlay({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
+/* ── Search Input Component (Client Side URL parameter sync) ───── */
+function SearchInput() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const [searchValue, setSearchValue] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchValue(searchParams ? searchParams.get("search") || "" : "");
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [searchParams]);
+
+  const handleSearch = (val: string) => {
+    setSearchValue(val);
+    const params = new URLSearchParams(window.location.search);
+    if (val) {
+      params.set("search", val);
+    } else {
+      params.delete("search");
+    }
+    router.push(`${pathname}?${params.toString()}`);
+  };
+
+  return (
+    <input
+      aria-label="Search events"
+      className="w-full bg-transparent text-sm text-[#2D2D2D] outline-none placeholder:text-[#8E877F]"
+      placeholder="Search events or guests"
+      value={searchValue}
+      onChange={(e) => handleSearch(e.target.value)}
+    />
+  );
+}
+
 /* ── Top Navbar ─────────────────────────────────── */
 function TopNavbar({
   event,
@@ -153,6 +442,7 @@ function TopNavbar({
   onMenuToggle,
   onCreateEvent,
   onOpenNotifications,
+  userName,
 }: {
   event?: EventRecord;
   activePath?: string;
@@ -160,10 +450,62 @@ function TopNavbar({
   onMenuToggle: () => void;
   onCreateEvent: () => void;
   onOpenNotifications: () => void;
+  userName?: string;
 }) {
   const activeSubNav = activePath !== undefined
     ? workspaceNavigation.find((item) => item.href === activePath)
     : null;
+
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  useEffect(() => {
+    const fetchUnreadCount = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        // Fetch events owned by user
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: events } = await (supabase as any)
+          .from("events")
+          .select("id")
+          .eq("owner_id", user.id);
+
+        if (!events || events.length === 0) return;
+        const eventIds = events.map((e: { id: string }) => e.id);
+
+        // Fetch count of guests and photos created in last 24 hours
+        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+        
+        const [guestsCountRes, photosCountRes] = await Promise.all([
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
+            .from("guests")
+            .select("id", { count: "exact", head: true })
+            .in("event_id", eventIds)
+            .gt("created_at", oneDayAgo),
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (supabase as any)
+            .from("event_photos")
+            .select("id", { count: "exact", head: true })
+            .in("event_id", eventIds)
+            .gt("uploaded_at", oneDayAgo),
+        ]);
+
+        const totalUnread = (guestsCountRes.count ?? 0) + (photosCountRes.count ?? 0);
+        setUnreadCount(totalUnread);
+      } catch (err) {
+        console.error("Error fetching unread count:", err);
+      }
+    };
+
+    fetchUnreadCount();
+    
+    // Set up polling interval to check for new alerts every 20 seconds
+    const interval = setInterval(fetchUnreadCount, 20000);
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <header className="sticky top-0 z-30 flex h-[72px] items-center gap-3 border-b border-[#2D2D2D]/6 bg-white/70 px-4 backdrop-blur-xl sm:gap-5 sm:px-6 lg:h-[76px] lg:px-9">
@@ -207,29 +549,37 @@ function TopNavbar({
       </div>
 
       {/* Search */}
-      <label className="ml-auto flex h-10 w-full max-w-[280px] items-center gap-2.5 rounded-xl border border-[#2D2D2D]/8 bg-white/80 px-3.5 text-[#8E877F] transition focus-within:border-[#D67D5C]/45 focus-within:shadow-[0_0_0_3px_rgba(214,125,92,0.08)] sm:h-11 sm:max-w-[318px] sm:px-4">
-        <span className="material-symbols-outlined text-[19px]">search</span>
-        <input
-          aria-label="Search events"
-          className="w-full bg-transparent text-sm text-[#2D2D2D] outline-none placeholder:text-[#8E877F]"
-          placeholder="Search events or guests"
-        />
-      </label>
+      {!event && (
+        <label className="ml-auto flex h-10 w-full max-w-[280px] items-center gap-2.5 rounded-xl border border-[#2D2D2D]/8 bg-white/80 px-3.5 text-[#8E877F] transition focus-within:border-[#D67D5C]/45 focus-within:shadow-[0_0_0_3px_rgba(214,125,92,0.08)] sm:h-11 sm:max-w-[318px] sm:px-4">
+          <span className="material-symbols-outlined text-[19px]">search</span>
+          <Suspense fallback={
+            <input
+              className="w-full bg-transparent text-sm text-[#2D2D2D] outline-none placeholder:text-[#8E877F]"
+              placeholder="Search events or guests"
+              disabled
+            />
+          }>
+            <SearchInput />
+          </Suspense>
+        </label>
+      )}
 
       {/* Notifications Button */}
       <button
         onClick={onOpenNotifications}
         aria-label="Notifications"
-        className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#2D2D2D]/8 bg-white text-[#625D58] transition hover:bg-[#FDF8F1] sm:h-11 sm:w-11"
+        className={`relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[#2D2D2D]/8 bg-white text-[#625D58] transition-all hover:bg-[#FDF8F1] hover:scale-105 active:scale-95 duration-200 group sm:h-11 sm:w-11 ${event ? "ml-auto" : ""}`}
       >
-        <span className="material-symbols-outlined text-[20px]">notifications</span>
-        <span className="absolute right-2.5 top-2.5 h-2 w-2 rounded-full bg-[#D67D5C] ring-2 ring-white animate-pulse" />
+        <span className="material-symbols-outlined text-[20px] transition-transform duration-300 group-hover:rotate-12">notifications</span>
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[#D67D5C] text-[9px] font-bold text-white border-2 border-white animate-pulse">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
       </button>
 
-      {/* Avatar */}
-      <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-[#2D2D2D] to-[#404040] text-xs font-semibold text-white sm:flex sm:h-11 sm:w-11">
-        AV
-      </div>
+      {/* Avatar (Dropdown menu) */}
+      <NavbarProfile userName={userName} />
 
       {/* Create Event CTA */}
       <button
@@ -295,6 +645,19 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const searchName = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("search") || "" : "";
+      const timer = setTimeout(() => {
+        setFormData((prev) => ({
+          ...prev,
+          name: searchName,
+        }));
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -602,58 +965,280 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
 /* ═══════════════════════════════════════════════════
    Notification Bar (Right Sidebar Drawer) Component
    ═══════════════════════════════════════════════════ */
+interface NotificationItem {
+  id: string;
+  type: "guest" | "photo" | "system";
+  eventId?: string;
+  title: string;
+  desc: string;
+  time: string;
+  timestamp: number;
+  icon: string;
+  color: string;
+  iconColor: string;
+  actionUrl?: string;
+  actionLabel?: string;
+}
+
 export function NotificationDrawer({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
-  const alerts = [
-    { title: "248 files received", desc: "Camera 03 - Lake Como Celebration", time: "2 min ago", icon: "upload_file" },
-    { title: "Amelia Stone registered", desc: "WhatsApp entry completed", time: "12 min ago", icon: "face" },
-    { title: "Storage threshold alert", desc: "You have reached 82% of your Pro limits", time: "2 hours ago", icon: "cloud" },
-    { title: "Settings configured", desc: "QR access has been refreshed", time: "1 day ago", icon: "tune" },
-  ];
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
+  const activeTab = "all";
+  const router = useRouter();
+
+  const loadNotifications = useCallback(async () => {
+    setLoading(true);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      // 1. Fetch user's events
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: events, error: eventsErr } = await (supabase as any)
+        .from("events")
+        .select("id, name")
+        .eq("owner_id", user.id);
+
+      if (eventsErr || !events || events.length === 0) {
+        setNotifications([]);
+        setLoading(false);
+        return;
+      }
+
+      const eventIds = events.map((e: { id: string }) => e.id);
+      const eventMap = new Map<string, string>(events.map((e: { id: string; name: string }) => [e.id, e.name]));
+
+      // 2. Fetch recent guests (last 5)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: recentGuests } = await (supabase as any)
+        .from("guests")
+        .select("id, display_name, phone, created_at, event_id")
+        .in("event_id", eventIds)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      // 3. Fetch recent photos (last 5)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: recentPhotos } = await (supabase as any)
+        .from("event_photos")
+        .select("id, original_filename, uploaded_at, event_id")
+        .in("event_id", eventIds)
+        .order("uploaded_at", { ascending: false })
+        .limit(5);
+
+      const formatTimeAgo = (date: Date) => {
+        const diffMs = new Date().getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / 60000);
+        if (diffMins < 1) return "Just now";
+        if (diffMins < 60) return `${diffMins} min ago`;
+        const diffHours = Math.floor(diffMins / 60);
+        if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+        return date.toLocaleDateString("en-IN", { month: "short", day: "numeric" });
+      };
+
+      const items: NotificationItem[] = [];
+
+      (recentGuests ?? []).forEach((g: { id: string; display_name: string | null; phone: string | null; created_at: string; event_id: string }) => {
+        items.push({
+          id: `guest-${g.id}`,
+          type: "guest",
+          eventId: g.event_id,
+          title: `${g.display_name ?? "New Guest"} joined`,
+          desc: `Registered for "${eventMap.get(g.event_id) ?? "Event"}" · ${g.phone}`,
+          time: formatTimeAgo(new Date(g.created_at)),
+          timestamp: new Date(g.created_at).getTime(),
+          icon: "person_add",
+          color: "border-emerald-500/10 bg-emerald-500/[0.02] hover:bg-emerald-500/[0.05] hover:border-emerald-500/20 text-[#2D2D2D]",
+          iconColor: "text-emerald-600 bg-emerald-50 border-emerald-100",
+          actionUrl: `/dashboard/events/${g.event_id}/attendees`,
+          actionLabel: "View Attendees",
+        });
+      });
+
+      (recentPhotos ?? []).forEach((p: { id: string; original_filename: string; uploaded_at: string; event_id: string }) => {
+        items.push({
+          id: `photo-${p.id}`,
+          type: "photo",
+          eventId: p.event_id,
+          title: "New Photo Ingested",
+          desc: `Uploaded "${p.original_filename}" to "${eventMap.get(p.event_id) ?? "Event"}"`,
+          time: formatTimeAgo(new Date(p.uploaded_at)),
+          timestamp: new Date(p.uploaded_at).getTime(),
+          icon: "photo_library",
+          color: "border-[#D67D5C]/10 bg-[#D67D5C]/[0.02] hover:bg-[#D67D5C]/[0.05] hover:border-[#D67D5C]/20 text-[#2D2D2D]",
+          iconColor: "text-[#D67D5C] bg-orange-50 border-orange-100",
+          actionUrl: `/dashboard/events/${p.event_id}/gallery`,
+          actionLabel: "Open Gallery",
+        });
+      });
+
+      // System notification
+      items.push({
+        id: "system-storage",
+        type: "system",
+        title: "Cloud Engine Ready",
+        desc: "Allocated storage limits are within thresholds. 10.0 GB available.",
+        time: "1 hour ago",
+        timestamp: Date.now() - 3600000,
+        icon: "cloud_done",
+        color: "border-indigo-500/10 bg-indigo-500/[0.02] hover:bg-indigo-500/[0.05] hover:border-indigo-500/20 text-[#2D2D2D]",
+        iconColor: "text-indigo-600 bg-indigo-50 border-indigo-100",
+        actionUrl: "/dashboard/storage",
+        actionLabel: "Check Status",
+      });
+
+      items.sort((a, b) => b.timestamp - a.timestamp);
+      setNotifications(items);
+    } catch (err) {
+      console.error("Failed to load notifications:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      const timer = setTimeout(() => {
+        loadNotifications();
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [isOpen, loadNotifications]);
+
+  const handleRefresh = async () => {
+    setSyncing(true);
+    await loadNotifications();
+    setTimeout(() => {
+      setSyncing(false);
+    }, 600);
+  };
+
+  const handleClearNotifications = () => {
+    setNotifications([]);
+  };
 
   if (!isOpen) return null;
+
+  const filteredNotifications = notifications.filter((n) => {
+    if (activeTab === "all") return true;
+    if (activeTab === "guests") return n.type === "guest";
+    if (activeTab === "photos") return n.type === "photo";
+    return true;
+  });
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop */}
-      <div className="absolute inset-0 bg-[#2D2D2D]/20 backdrop-blur-xs" onClick={onClose} />
+      <div className="absolute inset-0 bg-[#2D2D2D]/35 backdrop-blur-xs transition-opacity duration-300" onClick={onClose} />
 
-      {/* Slide out card */}
-      <div className="relative h-full w-[360px] max-w-full border-l border-[#2D2D2D]/6 bg-white/85 p-6 shadow-2xl backdrop-blur-2xl flex flex-col animate-slide-in">
+      {/* Slide out drawer */}
+      <div className="relative h-full w-[380px] max-w-full border-l border-[#2D2D2D]/6 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl flex flex-col animate-slide-in">
+        
+        {/* Drawer Header */}
         <div className="flex items-center justify-between border-b border-[#2D2D2D]/5 pb-4">
           <div className="flex items-center gap-2">
-            <span className="material-symbols-outlined text-[20px] text-[#D67D5C]">notifications</span>
-            <h3 className="text-base font-semibold text-[#2D2D2D]">Notifications</h3>
+            <span className="material-symbols-outlined text-[22px] text-[#D67D5C] font-semibold">notifications</span>
+            <h3 className="text-base font-bold text-[#2D2D2D] tracking-tight">Activity Feed</h3>
+            <span className="flex h-2 w-2 rounded-full bg-emerald-500 animate-pulse mt-0.5" />
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#FDF8F1] text-[#625D58] border border-[#2D2D2D]/5 transition"
-          >
-            <span className="material-symbols-outlined text-[18px]">close</span>
-          </button>
+          
+          <div className="flex items-center gap-1.5">
+            {/* Sync Refresh Button */}
+            <button
+              onClick={handleRefresh}
+              title="Sync Feed"
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#FDF8F1] text-[#625D58] border border-[#2D2D2D]/5 transition active:scale-95"
+            >
+              <span className={`material-symbols-outlined text-[18px] ${syncing ? "animate-spin text-[#D67D5C]" : ""}`}>
+                sync
+              </span>
+            </button>
+            {/* Close Button */}
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-red-50 text-red-500 border border-red-100 transition active:scale-95"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
         </div>
+
+
 
         {/* Scrollable list */}
-        <div className="mt-5 flex-1 overflow-y-auto space-y-4 pr-1">
-          {alerts.map((item, idx) => (
-            <div key={idx} className="flex gap-3.5 rounded-2xl bg-white/70 p-4 border border-[#2D2D2D]/4 hover:border-[#D67D5C]/15 transition hover:shadow-xs">
-              <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#FDF8F1] text-[#D67D5C]">
-                <span className="material-symbols-outlined text-[18px]">{item.icon}</span>
-              </span>
-              <div>
-                <p className="text-sm font-semibold text-[#2D2D2D]">{item.title}</p>
-                <p className="mt-1 text-xs text-[#827970]">{item.desc}</p>
-                <p className="mt-2 text-[10px] text-[#A69C93]">{item.time}</p>
-              </div>
+        <div className="mt-5 flex-1 overflow-y-auto space-y-3.5 pr-1 dash-scroll">
+          {loading && !syncing ? (
+            <div className="flex flex-col items-center justify-center py-24 text-[#827970] gap-3">
+              <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#2D2D2D]/10 border-t-[#D67D5C]" />
+              <p className="text-xs font-medium tracking-wide">Syncing Workspace Feed...</p>
             </div>
-          ))}
+          ) : filteredNotifications.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-24 text-[#827970] text-center px-4">
+              <span className="material-symbols-outlined text-4xl text-[#D9CEC5] mb-2">notifications_off</span>
+              <p className="text-xs font-bold text-[#2D2D2D]">No alerts matches filter</p>
+              <p className="text-[10px] text-[#827970] mt-1 max-w-[200px]">New guest signups or photo ingests will populate here automatically.</p>
+            </div>
+          ) : (
+            filteredNotifications.map((item) => (
+              <div
+                key={item.id}
+                className={`group flex gap-3.5 rounded-2xl p-4 border transition-all duration-300 hover:shadow-md hover:-translate-y-0.5 ${item.color}`}
+              >
+                <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border font-medium ${item.iconColor}`}>
+                  <span className="material-symbols-outlined text-[19px]">{item.icon}</span>
+                </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-start justify-between gap-1.5">
+                    <p className="text-xs font-bold text-[#2D2D2D] leading-tight group-hover:text-[#D67D5C] transition-colors">{item.title}</p>
+                    <span className="text-[9px] text-[#A69C93] shrink-0 flex items-center gap-1 font-medium mt-0.5">
+                      <span className="material-symbols-outlined text-[11px]">schedule</span>
+                      {item.time}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-[11px] text-[#574F49] leading-relaxed break-words">{item.desc}</p>
+                  
+                  {/* Contextual Action Button */}
+                  {item.actionUrl && (
+                    <button
+                      onClick={() => {
+                        if (item.actionUrl) {
+                          router.push(item.actionUrl);
+                          onClose();
+                        }
+                      }}
+                      className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold text-[#D67D5C] bg-[#D67D5C]/5 hover:bg-[#D67D5C]/10 border border-[#D67D5C]/10 hover:border-[#D67D5C]/20 px-2.5 py-1.5 rounded-lg transition-all active:scale-95 cursor-pointer"
+                    >
+                      <span>{item.actionLabel}</span>
+                      <span className="material-symbols-outlined text-[12px] font-bold">arrow_forward</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        <button
-          onClick={onClose}
-          className="mt-6 w-full py-3 rounded-xl border border-[#2D2D2D]/8 bg-white text-xs font-semibold text-[#625D58] hover:bg-[#FDF8F1] transition"
-        >
-          Mark all as read
-        </button>
+        {/* Drawer Footer actions */}
+        <div className="mt-6 border-t border-[#2D2D2D]/6 pt-4 flex gap-2.5">
+          <button
+            onClick={handleClearNotifications}
+            disabled={notifications.length === 0}
+            className="flex-1 py-3 rounded-xl border border-[#2D2D2D]/8 bg-white text-xs font-bold text-[#625D58] hover:bg-[#FDF8F1] hover:text-[#2D2D2D] transition disabled:opacity-50"
+          >
+            Dismiss All
+          </button>
+          <button
+            onClick={onClose}
+            className="px-5 py-3 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] text-xs font-bold text-white shadow-md hover:shadow-lg active:scale-95 transition"
+          >
+            Close Feed
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -680,13 +1265,19 @@ export function DashboardShell({
 
   const pathname = usePathname();
   useEffect(() => {
-    setSidebarOpen(false);
+    const timer = setTimeout(() => {
+      setSidebarOpen(false);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {
     const saved = localStorage.getItem("sidebar-collapsed");
     if (saved) {
-      setIsCollapsed(saved === "true");
+      const timer = setTimeout(() => {
+        setIsCollapsed(saved === "true");
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -715,7 +1306,6 @@ export function DashboardShell({
         </button>
 
         <Brand collapsed={isCollapsed && !sidebarOpen} />
-        <ProfileBlock collapsed={isCollapsed && !sidebarOpen} userName={userName} />
         
         <nav className="mt-8 space-y-1.5">
           {mainNavigation.map((item) => (
@@ -729,7 +1319,6 @@ export function DashboardShell({
           ))}
         </nav>
 
-        <StorageFooter collapsed={isCollapsed && !sidebarOpen} />
 
         <button
           onClick={toggleCollapse}
@@ -750,6 +1339,7 @@ export function DashboardShell({
           onMenuToggle={() => setSidebarOpen(true)}
           onCreateEvent={() => setIsCreateOpen(true)}
           onOpenNotifications={() => setIsNotifOpen(true)}
+          userName={userName}
         />
         {children}
       </div>
@@ -785,13 +1375,19 @@ export function EventWorkspaceShell({
 
   const pathname = usePathname();
   useEffect(() => {
-    setSidebarOpen(false);
+    const timer = setTimeout(() => {
+      setSidebarOpen(false);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [pathname]);
 
   useEffect(() => {
     const saved = localStorage.getItem("sidebar-collapsed");
     if (saved) {
-      setIsCollapsed(saved === "true");
+      const timer = setTimeout(() => {
+        setIsCollapsed(saved === "true");
+      }, 0);
+      return () => clearTimeout(timer);
     }
   }, []);
 
@@ -888,8 +1484,6 @@ export function EventWorkspaceShell({
           })}
         </nav>
 
-        <ProfileBlock collapsed={isCollapsed && !sidebarOpen} userName={userName} />
-        <StorageFooter collapsed={isCollapsed && !sidebarOpen} />
 
         <button
           onClick={toggleCollapse}
@@ -910,6 +1504,7 @@ export function EventWorkspaceShell({
           onMenuToggle={() => setSidebarOpen(true)}
           onCreateEvent={() => setIsCreateOpen(true)}
           onOpenNotifications={() => setIsNotifOpen(true)}
+          userName={userName}
         />
         {children}
       </div>
