@@ -39,10 +39,12 @@ export function EventOverviewPanel({
   event,
   photos,
   guests,
+  photoCount,
 }: {
   event: EventRecord;
   photos: EventPhoto[];
   guests: Guest[];
+  photoCount: number;
 }) {
   const router = useRouter();
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
@@ -134,7 +136,7 @@ export function EventOverviewPanel({
     <div className="space-y-6">
       {/* Stats row */}
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 sm:gap-4">
-        <MiniStat label="Total uploads" value={localPhotos.length.toLocaleString()} note="Photos in this event" icon="photo_camera" />
+        <MiniStat label="Total uploads" value={photoCount.toLocaleString()} note="Photos in this event" icon="photo_camera" />
         <MiniStat label="Guest joins" value={guests.length.toLocaleString()} note="Registered guests" icon="groups" />
         <MiniStat label="QR Status" value={event.qr_active ? "Active" : "Paused"} note={event.qr_active ? "Guests can scan" : "QR paused"} icon="qr_code_2" />
       </div>
@@ -147,7 +149,7 @@ export function EventOverviewPanel({
           </span>
           <div>
             <h3 className="text-sm font-semibold text-[#2D2D2D]">Event Storage Allocation</h3>
-            <p className="mt-0.5 text-xs text-[#827970]">{totalSizeFormatted} utilized by {localPhotos.length} photos</p>
+            <p className="mt-0.5 text-xs text-[#827970]">{totalSizeFormatted} utilized by {photoCount} photos</p>
           </div>
         </div>
         <div className="w-full sm:max-w-xs space-y-2">
@@ -169,7 +171,7 @@ export function EventOverviewPanel({
         <h3 className="mb-4 text-xs font-semibold uppercase tracking-wider text-[#766D66]">Workspace Folders</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
-            { name: "Event Photos", icon: "folder", count: `${localPhotos.length} items`, size: totalSizeFormatted, color: "text-[#D67D5C] bg-[#D67D5C]/8", href: `${rootHref}/gallery` },
+            { name: "Event Photos", icon: "folder", count: `${photoCount} items`, size: totalSizeFormatted, color: "text-[#D67D5C] bg-[#D67D5C]/8", href: `${rootHref}/gallery` },
             { name: "Guest Database", icon: "folder_shared", count: `${guests.length} registered`, size: "WhatsApp active", color: "text-[#F4A261] bg-[#F4A261]/8", href: `${rootHref}/attendees` },
             { name: "QR Access Code", icon: "qr_code_2", count: event.qr_active ? "Active" : "Paused", size: "Print material", color: "text-green-600 bg-green-50", href: `${rootHref}/qr` },
             { name: "Workspace Settings", icon: "folder_open", count: "Branding & Privacy", size: "Config files", color: "text-slate-600 bg-slate-100", href: `${rootHref}/settings` },
@@ -449,77 +451,152 @@ export function EventOverviewPanel({
 export function UploadsPanel({ event, photos }: { event: EventRecord; photos: EventPhoto[] }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [uploadQueue, setUploadQueue] = useState<
-    { name: string; progress: number; state: "Uploading" | "Processed" | "Error" }[]
-  >([]);
+  
+  interface QueueItem {
+    id: string;
+    file: File;
+    name: string;
+    progress: number;
+    state: "Pending" | "Uploading" | "Processed" | "Paused" | "Error";
+  }
+
+  const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
+  const [isPaused, setIsPaused] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
 
-  const uploadFiles = async (files: FileList) => {
+  const isPausedRef = useRef(false);
+  const isUploadingRef = useRef(false);
+  const queueRef = useRef<QueueItem[]>([]);
+
+  // Keep queueRef in sync with uploadQueue for the worker
+  useEffect(() => {
+    queueRef.current = uploadQueue;
+  }, [uploadQueue]);
+
+  const updateQueueItem = (id: string, updates: Partial<QueueItem>) => {
+    queueRef.current = queueRef.current.map((item) =>
+      item.id === id ? { ...item, ...updates } : item
+    );
+    setUploadQueue([...queueRef.current]);
+  };
+
+  const processQueue = async () => {
+    if (isUploadingRef.current) return;
+    isUploadingRef.current = true;
+    setIsUploading(true);
+
     const supabase = createClient();
-    const fileArray = Array.from(files);
 
-    // Add to queue immediately
-    const queueEntries = fileArray.map((f) => ({ name: f.name, progress: 0, state: "Uploading" as const }));
-    setUploadQueue((prev) => [...prev, ...queueEntries]);
+    while (true) {
+      if (isPausedRef.current) {
+        break;
+      }
 
-    for (let i = 0; i < fileArray.length; i++) {
-      const file = fileArray[i];
+      const nextItem = queueRef.current.find((item) => item.state === "Pending");
+      if (!nextItem) {
+        break;
+      }
+
+      updateQueueItem(nextItem.id, { state: "Uploading", progress: 0 });
+
+      const file = nextItem.file;
       const ext = file.name.split(".").pop() ?? "jpg";
-      const storagePath = `${event.id}/${Date.now()}-${i}.${ext}`;
-
-      // Animate progress
-      const updateProgress = (p: number) => {
-        setUploadQueue((prev) =>
-          prev.map((q, idx) =>
-            idx === uploadQueue.length + i ? { ...q, progress: p } : q
-          )
-        );
-      };
+      const storagePath = `${event.id}/${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
 
       let prog = 0;
       const interval = setInterval(() => {
         prog = Math.min(prog + 15, 90);
-        updateProgress(prog);
-      }, 100);
+        updateQueueItem(nextItem.id, { progress: prog });
+      }, 150);
 
-      const { error } = await supabase.storage
-        .from("event-photos")
-        .upload(storagePath, file, { upsert: true });
+      try {
+        const { error } = await supabase.storage
+          .from("event-photos")
+          .upload(storagePath, file, { upsert: true });
 
-      clearInterval(interval);
+        clearInterval(interval);
 
-      if (error) {
-        setUploadQueue((prev) =>
-          prev.map((q, idx) =>
-            idx === uploadQueue.length + i ? { ...q, progress: 100, state: "Error" } : q
-          )
-        );
-        continue;
+        if (error) {
+          updateQueueItem(nextItem.id, { progress: 100, state: "Error" });
+          continue;
+        }
+
+        const { data: urlData } = supabase.storage.from("event-photos").getPublicUrl(storagePath);
+        const res = await fetch("/api/photos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            event_id: event.id,
+            storage_path: storagePath,
+            public_url: urlData.publicUrl,
+            original_filename: file.name,
+            file_size_bytes: file.size,
+            mime_type: file.type,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error("Failed to insert photo record");
+        }
+
+        updateQueueItem(nextItem.id, { progress: 100, state: "Processed" });
+      } catch (err) {
+        clearInterval(interval);
+        console.error("Upload error:", err);
+        updateQueueItem(nextItem.id, { progress: 100, state: "Error" });
       }
-
-      // Get public URL and insert DB record via API route
-      const { data: urlData } = supabase.storage.from("event-photos").getPublicUrl(storagePath);
-      await fetch("/api/photos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          event_id: event.id,
-          storage_path: storagePath,
-          public_url: urlData.publicUrl,
-          original_filename: file.name,
-          file_size_bytes: file.size,
-          mime_type: file.type,
-        }),
-      });
-
-      setUploadQueue((prev) =>
-        prev.map((q, idx) =>
-          idx === uploadQueue.length + i ? { ...q, progress: 100, state: "Processed" } : q
-        )
-      );
     }
 
+    isUploadingRef.current = false;
+    setIsUploading(false);
     router.refresh();
+  };
+
+  const uploadFiles = (files: FileList) => {
+    const fileArray = Array.from(files);
+
+    const queueEntries = fileArray.map((f, idx) => ({
+      id: `${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 5)}`,
+      file: f,
+      name: f.name,
+      progress: 0,
+      state: "Pending" as const,
+    }));
+
+    queueRef.current = [...queueRef.current, ...queueEntries];
+    setUploadQueue([...queueRef.current]);
+
+    processQueue();
+  };
+
+  const handlePause = () => {
+    isPausedRef.current = true;
+    setIsPaused(true);
+    queueRef.current = queueRef.current.map((item) =>
+      item.state === "Pending" ? { ...item, state: "Paused" as const } : item
+    );
+    setUploadQueue([...queueRef.current]);
+  };
+
+  const handleResume = () => {
+    isPausedRef.current = false;
+    setIsPaused(false);
+    queueRef.current = queueRef.current.map((item) =>
+      item.state === "Paused" ? { ...item, state: "Pending" as const } : item
+    );
+    setUploadQueue([...queueRef.current]);
+    processQueue();
+  };
+
+  const handleCancel = () => {
+    isPausedRef.current = true;
+    setIsPaused(false);
+    queueRef.current = queueRef.current.filter(
+      (item) => item.state === "Processed" || item.state === "Error"
+    );
+    setUploadQueue([...queueRef.current]);
+    isPausedRef.current = false;
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -528,71 +605,166 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
     if (e.dataTransfer.files) uploadFiles(e.dataTransfer.files);
   };
 
+  const totalFiles = uploadQueue.length;
+  const uploadedCount = uploadQueue.filter((item) => item.state === "Processed").length;
+  const failedCount = uploadQueue.filter((item) => item.state === "Error").length;
+  const uploadingCount = uploadQueue.filter((item) => item.state === "Uploading").length;
+  const pendingCount = uploadQueue.filter((item) => item.state === "Pending").length;
+  const pausedCount = uploadQueue.filter((item) => item.state === "Paused").length;
+
+  const overallProgress = totalFiles > 0
+    ? Math.round(
+        (uploadQueue.reduce((acc, item) => acc + item.progress, 0) / (totalFiles * 100)) * 100
+      )
+    : 0;
+
   return (
     <div className="grid gap-4 xl:grid-cols-[1.25fr_0.75fr] sm:gap-5">
-      {/* Drop zone */}
-      <section
-        className={`rounded-[28px] border-2 border-dashed bg-white/50 p-5 backdrop-blur-xl sm:p-8 transition-all ${
-          isDragging ? "border-[#D67D5C] bg-[#D67D5C]/5" : "border-[#D67D5C]/30"
-        }`}
-        onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
-        onDragLeave={() => setIsDragging(false)}
-        onDrop={handleDrop}
-        onClick={() => fileInputRef.current?.click()}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/jpeg,image/png,image/webp,image/heic"
-          className="hidden"
-          onChange={(e) => e.target.files && uploadFiles(e.target.files)}
-        />
-        <div className="flex min-h-[240px] flex-col items-center justify-center rounded-[22px] bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] px-6 text-center sm:min-h-[290px] sm:px-8 cursor-pointer">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#D67D5C]/10 text-[#B36144] sm:h-14 sm:w-14">
-            <span className="material-symbols-outlined text-[26px] sm:text-[29px]">cloud_upload</span>
-          </span>
-          <h2 className="mt-4 text-lg font-semibold tracking-[-0.04em] sm:mt-5 sm:text-xl">
-            {isDragging ? "Drop to upload!" : "Drop original photos here"}
-          </h2>
-          <p className="mt-2 max-w-sm text-xs leading-5 text-[#827970] sm:text-sm sm:leading-6">
-            Or click to browse. JPEG, PNG, HEIC files accepted.
-          </p>
-          <button
-            type="button"
-            className="mt-5 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] px-5 py-2.5 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(214,125,92,0.25)] transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98] sm:mt-6 sm:px-6 sm:py-3 sm:text-sm"
-          >
-            Browse Files
-          </button>
-        </div>
-      </section>
+      {/* Left Column: Drop zone and Progress Stats */}
+      <div className="space-y-4 sm:space-y-5">
+        {/* Drop zone */}
+        <section
+          className={`rounded-[28px] border-2 border-dashed bg-white/50 p-5 backdrop-blur-xl sm:p-8 transition-all ${
+            isDragging ? "border-[#D67D5C] bg-[#D67D5C]/5" : "border-[#D67D5C]/30"
+          }`}
+          onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
+          onDragLeave={() => setIsDragging(false)}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+        >
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            accept="image/jpeg,image/png,image/webp,image/heic"
+            className="hidden"
+            onChange={(e) => e.target.files && uploadFiles(e.target.files)}
+          />
+          <div className="flex min-h-[200px] flex-col items-center justify-center rounded-[22px] bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] px-6 text-center sm:min-h-[240px] sm:px-8 cursor-pointer">
+            <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-[#D67D5C]/10 text-[#B36144] sm:h-12 sm:w-12">
+              <span className="material-symbols-outlined text-[24px] sm:text-[26px]">cloud_upload</span>
+            </span>
+            <h2 className="mt-4 text-base font-semibold tracking-[-0.04em] sm:mt-5 sm:text-lg">
+              {isDragging ? "Drop to upload!" : "Drop original photos here"}
+            </h2>
+            <p className="mt-2 max-w-sm text-[11px] leading-4 text-[#827970] sm:text-xs sm:leading-5">
+              Or click to browse. JPEG, PNG, HEIC files accepted.
+            </p>
+            <button
+              type="button"
+              className="mt-4 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] px-4 py-2 text-xs font-semibold text-white shadow-[0_6px_16px_rgba(214,125,92,0.25)] transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98] sm:mt-5 sm:px-5 sm:py-2.5"
+            >
+              Browse Files
+            </button>
+          </div>
+        </section>
 
-      {/* Upload queue */}
+        {/* Global Progress Statistics Banner */}
+        {uploadQueue.length > 0 && (
+          <div className="rounded-[26px] border border-[#D67D5C]/15 bg-gradient-to-br from-[#FFFDFB] to-[#FFF6F0] p-5 backdrop-blur-xl shadow-xs">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h3 className="text-[10px] font-bold uppercase tracking-wider text-[#B36144]">Upload Progress</h3>
+                <p className="mt-1 text-lg font-semibold text-[#2D2D2D] sm:text-xl">
+                  {uploadedCount} of {totalFiles} uploaded
+                </p>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#827970]">
+                  {uploadingCount > 0 && <span className="font-semibold text-[#D67D5C]">{uploadingCount} uploading</span>}
+                  {pendingCount > 0 && <span>{pendingCount} pending</span>}
+                  {pausedCount > 0 && <span className="font-semibold text-amber-600">{pausedCount} paused</span>}
+                  {failedCount > 0 && <span className="font-semibold text-red-500">{failedCount} failed</span>}
+                  {uploadedCount > 0 && <span className="text-green-600 font-semibold">{uploadedCount} completed</span>}
+                </div>
+              </div>
+
+              {/* Control buttons */}
+              <div className="flex flex-wrap gap-2">
+                {isUploading && !isPaused && (
+                  <button
+                    onClick={handlePause}
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-xl border border-[#D67D5C]/30 bg-white px-3 py-2 text-xs font-semibold text-[#B36144] hover:bg-[#FFFDFB] active:scale-[0.98] transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">pause</span>
+                    Pause Queue
+                  </button>
+                )}
+
+                {isPaused && (
+                  <button
+                    onClick={handleResume}
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-xl bg-[#D67D5C] px-4 py-2 text-xs font-semibold text-white hover:bg-[#C46A4A] active:scale-[0.98] transition-all shadow-sm"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                    Resume Queue
+                  </button>
+                )}
+
+                {(uploadingCount > 0 || pendingCount > 0 || pausedCount > 0) && (
+                  <button
+                    onClick={handleCancel}
+                    type="button"
+                    className="flex items-center gap-1.5 rounded-xl border border-red-200 bg-red-50/50 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50 hover:border-red-300 active:scale-[0.98] transition-all"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">cancel</span>
+                    Cancel Remaining
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Global Progress Bar */}
+            <div className="mt-4">
+              <div className="flex items-center justify-between text-xs font-medium text-[#766D66] mb-1.5">
+                <span>Overall Completion</span>
+                <span>{overallProgress}%</span>
+              </div>
+              <div className="h-2 overflow-hidden rounded-full bg-[#EFE6DD]">
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#D67D5C] to-[#F4A261] transition-all duration-500"
+                  style={{ width: `${overallProgress}%` }}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Right Column: Upload queue list */}
       <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl sm:p-6">
         <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">Upload queue</h2>
         {uploadQueue.length === 0 ? (
           <p className="mt-4 text-xs text-[#827970]">No active uploads.</p>
         ) : (
-          <div className="mt-5 space-y-4 sm:mt-6 sm:space-y-5">
-            {uploadQueue.map((upload, idx) => (
-              <div key={`${upload.name}-${idx}`}>
+          <div className="mt-5 max-h-[360px] overflow-y-auto pr-1 space-y-4 sm:mt-6 sm:space-y-5">
+            {uploadQueue.map((upload) => (
+              <div key={upload.id} className="border-b border-[#2D2D2D]/5 pb-3 last:border-0 last:pb-0">
                 <div className="flex justify-between gap-2 sm:gap-3">
-                  <p className="truncate text-xs font-medium">{upload.name}</p>
-                  <p className={`shrink-0 text-[11px] ${upload.state === "Error" ? "text-red-500" : "text-[#827970]"}`}>
+                  <p className="truncate text-xs font-medium text-[#2D2D2D]">{upload.name}</p>
+                  <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                    upload.state === "Processed" ? "bg-green-50 text-green-600" :
+                    upload.state === "Error" ? "bg-red-50 text-red-500" :
+                    upload.state === "Paused" ? "bg-amber-50 text-amber-600" :
+                    upload.state === "Uploading" ? "bg-[#D67D5C]/10 text-[#B36144]" :
+                    "bg-slate-50 text-slate-500"
+                  }`}>
                     {upload.state}
-                  </p>
+                  </span>
                 </div>
                 <div className="mt-2.5 h-1.5 rounded-full bg-[#EFE6DD] sm:mt-3">
                   <div
                     className={`h-full rounded-full transition-all duration-500 ${
                       upload.state === "Error"
                         ? "bg-red-400"
+                        : upload.state === "Paused"
+                        ? "bg-amber-400"
                         : "bg-gradient-to-r from-[#D67D5C] to-[#F4A261]"
                     }`}
                     style={{ width: `${upload.progress}%` }}
                   />
                 </div>
-                <div className="mt-1.5 flex justify-between text-[11px] text-[#92877F] sm:mt-2">
+                <div className="mt-1.5 flex justify-between text-[10px] text-[#92877F] sm:mt-2">
                   <span>{upload.progress}% complete</span>
                 </div>
               </div>
@@ -601,11 +773,22 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
         )}
       </section>
 
-      {/* Recently processed photos from Supabase */}
+      {/* Bottom Column: Event photos display */}
       <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl xl:col-span-2 sm:p-6">
-        <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">
-          Event photos <span className="ml-2 text-sm font-normal text-[#827970]">({photos.length} total)</span>
-        </h2>
+        <div className="flex items-center justify-between">
+          <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">
+            Event photos <span className="ml-2 text-sm font-normal text-[#827970]">({photos.length} total)</span>
+          </h2>
+          {photos.length > 0 && (
+            <Link
+              href={`/dashboard/events/${event.id}/gallery`}
+              className="flex items-center gap-1 text-xs font-semibold text-[#D67D5C] hover:text-[#C46A4A] transition"
+            >
+              View all in Gallery
+              <span className="material-symbols-outlined text-[15px]">arrow_forward</span>
+            </Link>
+          )}
+        </div>
         {photos.length === 0 ? (
           <p className="mt-4 text-sm text-[#827970]">No photos uploaded yet. Drop files above to get started.</p>
         ) : (
@@ -832,10 +1015,40 @@ export function QrPanel({ event, guestCount }: { event: EventRecord; guestCount:
 /* ═══════════════════════════════════════════════════
    Gallery Panel — Real photos from Supabase Storage
    ═══════════════════════════════════════════════════ */
-export function GalleryPanel({ photos }: { photos: EventPhoto[] }) {
+export function GalleryPanel({ eventId, photos }: { eventId: string; photos: EventPhoto[] }) {
   const [search, setSearch] = useState("");
+  const [localPhotos, setLocalPhotos] = useState<EventPhoto[]>(photos);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(photos.length === 10000);
 
-  const filteredPhotos = photos.filter((photo) =>
+  useEffect(() => {
+    setLocalPhotos(photos);
+    setHasMore(photos.length === 10000);
+  }, [photos]);
+
+  const handleLoadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await (supabase as any)
+        .from("event_photos")
+        .select("*")
+        .eq("event_id", eventId)
+        .order("uploaded_at", { ascending: false })
+        .range(localPhotos.length, localPhotos.length + 9999);
+
+      if (!error && data) {
+        setLocalPhotos((prev) => [...prev, ...(data as EventPhoto[])]);
+        setHasMore(data.length === 10000);
+      }
+    } catch (err) {
+      console.error("Failed to load more photos:", err);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const filteredPhotos = localPhotos.filter((photo) =>
     (photo.original_filename ?? "").toLowerCase().includes(search.toLowerCase())
   );
 
@@ -857,7 +1070,7 @@ export function GalleryPanel({ photos }: { photos: EventPhoto[] }) {
             </button>
           )}
         </label>
-        <span className="text-xs text-[#827970]">{filteredPhotos.length} of {photos.length} photos</span>
+        <span className="text-xs text-[#827970]">{filteredPhotos.length} of {localPhotos.length} photos</span>
       </div>
 
       {/* Masonry grid */}
@@ -867,23 +1080,42 @@ export function GalleryPanel({ photos }: { photos: EventPhoto[] }) {
           <p className="text-sm">No photos match your search.</p>
         </div>
       ) : (
-        <div className="columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3">
-          {filteredPhotos.map((photo, index) => (
-            <article
-              key={photo.id}
-              className={`group relative mb-3 overflow-hidden rounded-2xl sm:mb-4 ${index % 3 === 0 ? "h-[260px] sm:h-[330px]" : "h-[190px] sm:h-[235px]"}`}
-            >
-              <div
-                className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
-                style={{ backgroundImage: `url("${photo.public_url}")` }}
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
-              <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
-                <p className="text-white text-[10px] font-medium truncate max-w-[140px]">{photo.original_filename}</p>
-              </div>
-            </article>
-          ))}
-        </div>
+        <>
+          <div className="columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3">
+            {filteredPhotos.map((photo, index) => (
+              <article
+                key={photo.id}
+                className={`group relative mb-3 overflow-hidden rounded-2xl sm:mb-4 ${index % 3 === 0 ? "h-[260px] sm:h-[330px]" : "h-[190px] sm:h-[235px]"}`}
+              >
+                <div
+                  className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
+                  style={{ backgroundImage: `url("${photo.public_url}")` }}
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+                <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <p className="text-white text-[10px] font-medium truncate max-w-[140px]">{photo.original_filename}</p>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          {/* Load More button */}
+          {!search && hasMore && (
+            <div className="mt-6 flex justify-center">
+              <button
+                onClick={handleLoadMore}
+                disabled={loadingMore}
+                className="flex items-center gap-2 rounded-xl border border-[#2D2D2D]/8 bg-white px-6 py-2.5 text-xs font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] hover:border-[#D67D5C]/30 active:scale-[0.98] disabled:opacity-50"
+              >
+                {loadingMore ? (
+                  <><span className="material-symbols-outlined text-[16px] animate-spin">sync</span> Loading...</>
+                ) : (
+                  <><span className="material-symbols-outlined text-[16px]">add</span> Load More Photos</>
+                )}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </section>
   );
@@ -935,7 +1167,7 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
     // Double confirmation to make sure
     const confirmName = prompt(`To confirm deletion, please type the event name: "${event.name}"`);
     if (confirmName !== event.name) {
-      alert("Event name confirmation did not match. Deletion cancelled.");
+      alert("Event name confirmation did not match. Deletion canceled.");
       return;
     }
     

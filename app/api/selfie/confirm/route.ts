@@ -38,6 +38,17 @@ export async function POST(req: NextRequest) {
 
     // Save the DB record if we have a guestId
     if (guestId) {
+      // Delete old photo matches for this guest in this event since they are uploading a new selfie
+      const { error: deleteMatchesError } = await adminSupabase
+        .from("photo_matches")
+        .delete()
+        .eq("guest_id", guestId)
+        .eq("event_id", eventId);
+
+      if (deleteMatchesError) {
+        console.error("[selfie/confirm] Failed to delete old photo matches:", deleteMatchesError.message);
+      }
+
       const { error: dbError } = await adminSupabase
         .from("guest_selfies")
         .insert({

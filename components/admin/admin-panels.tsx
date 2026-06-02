@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { AdminStats, PhotographerRow, AdminEventRow, AdminChartData } from "@/lib/admin-data";
+import type { AdminStats, PhotographerRow, AdminEventRow, AdminChartData, InquiryRow } from "@/lib/admin-data";
 import { DonutChart, AreaLineChart, HorizontalBarChart } from "@/components/admin/charts";
 
 /* ── Sidebar nav items ── */
@@ -11,6 +11,7 @@ const nav = [
   { label: "Overview", href: "/admin", icon: "space_dashboard" },
   { label: "Photographers", href: "/admin/photographers", icon: "photo_camera" },
   { label: "Events", href: "/admin/events", icon: "photo_library" },
+  { label: "Inquiries", href: "/admin/inquiries", icon: "mail" },
 ];
 
 /* ── Reusable warm stat card ── */
@@ -1141,6 +1142,315 @@ export function AdminEvents() {
           )}
         </div>
       </main>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════
+   INQUIRIES PAGE
+   ═══════════════════════════════════════════════ */
+export function AdminInquiries() {
+  const [inquiries, setInquiries] = useState<InquiryRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
+  const [selectedInquiry, setSelectedInquiry] = useState<InquiryRow | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetch("/api/admin/inquiries")
+      .then((r) => r.json())
+      .then((data) => {
+        if (Array.isArray(data)) {
+          setInquiries(data);
+        } else {
+          setInquiries([]);
+        }
+      })
+      .catch((err) => {
+        console.error("Error loading inquiries:", err);
+        setInquiries([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this inquiry?")) return;
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/admin/inquiries?id=${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete");
+      if (selectedInquiry?.id === id) {
+        setSelectedInquiry(null);
+      }
+      load();
+    } catch (err) {
+      alert("Error deleting inquiry. Please try again.");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const filteredInquiries = useMemo(() => {
+    return inquiries.filter((inq) => {
+      const query = search.toLowerCase();
+      return (
+        inq.name.toLowerCase().includes(query) ||
+        inq.email.toLowerCase().includes(query) ||
+        (inq.phone || "").toLowerCase().includes(query) ||
+        (inq.location || "").toLowerCase().includes(query) ||
+        (inq.event_type || "").toLowerCase().includes(query)
+      );
+    });
+  }, [inquiries, search]);
+
+  const getEventTypeColor = (type: string | null) => {
+    if (!type) return "bg-stone-100 text-stone-600 border-stone-200";
+    const t = type.toLowerCase();
+    if (t === "wedding") return "bg-[#D67D5C]/10 text-[#94492c] border-[#D67D5C]/20";
+    if (t === "reunion") return "bg-green-50 text-green-700 border-green-200";
+    if (t === "gala") return "bg-blue-50 text-blue-700 border-blue-200";
+    if (t === "baptism") return "bg-purple-50 text-purple-700 border-purple-200";
+    if (t === "corporate") return "bg-amber-50 text-amber-700 border-amber-200";
+    return "bg-stone-50 text-stone-600 border-stone-200";
+  };
+
+  function timeAgo(ts: string) {
+    const diff = Date.now() - new Date(ts).getTime();
+    const mins = Math.floor(diff / 60000);
+    if (mins < 1) return "Just now";
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    const days = Math.floor(hrs / 24);
+    if (days < 30) return `${days}d ago`;
+    return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  }
+
+  return (
+    <div className="flex min-h-screen bg-[#FCF9F8]">
+      <AdminSidebar active="Inquiries" />
+      <main className="flex-1 pl-60">
+        <div className="p-8 max-w-6xl">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-widest text-[#D67D5C]">Admin</p>
+              <h1 className="mt-1 text-2xl font-bold text-[#2D2D2D] tracking-tight">Event Inquiries</h1>
+              <p className="mt-1 text-sm text-[#827970]">Review and manage potential event inquiries submitted via the public portal.</p>
+            </div>
+            
+            {/* Search Bar */}
+            <div className="relative w-full md:w-80">
+              <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-[#827970]">search</span>
+              <input
+                type="text"
+                placeholder="Search inquiries..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full rounded-xl bg-white border border-[#EFE6DD] pl-10 pr-4 py-2.5 text-sm text-[#2D2D2D] placeholder:text-[#827970] focus:outline-none focus:border-[#D67D5C] focus:ring-1 focus:ring-[#D67D5C]"
+              />
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="flex items-center gap-3 text-[#827970] py-20 justify-center">
+              <span className="h-5 w-5 animate-spin rounded-full border-2 border-stone-200 border-t-[#D67D5C]" />
+              <span className="text-sm">Loading inquiries...</span>
+            </div>
+          ) : (
+            <div className="rounded-2xl border border-[#EFE6DD] bg-white overflow-hidden shadow-[0_4px_20px_-4px_rgba(148,73,44,0.03)] animate-page-enter">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[#EFE6DD] bg-[#FAF5EF]/50">
+                    <th className="text-left px-5 py-3.5 text-xs font-bold text-[#827970] uppercase tracking-wider">Inquirer</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-bold text-[#827970] uppercase tracking-wider">Contact</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-bold text-[#827970] uppercase tracking-wider">Event Details</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-bold text-[#827970] uppercase tracking-wider">Type</th>
+                    <th className="text-left px-5 py-3.5 text-xs font-bold text-[#827970] uppercase tracking-wider">Submitted</th>
+                    <th className="px-5 py-3.5" />
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#EFE6DD]">
+                  {filteredInquiries.length === 0 && (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-12 text-center">
+                        <span className="material-symbols-outlined text-[40px] text-stone-300 block mb-2">mail</span>
+                        <p className="text-[#827970] text-sm">No inquiries found.</p>
+                      </td>
+                    </tr>
+                  )}
+                  {filteredInquiries.map((inq) => (
+                    <tr key={inq.id} className="hover:bg-stone-50/50 transition duration-150">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#D67D5C]/20 to-[#B36144]/15 text-[#94492c] text-sm font-bold flex-shrink-0">
+                            {inq.name[0].toUpperCase()}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-[#2D2D2D]">{inq.name}</p>
+                            {inq.guest_count && (
+                              <p className="text-xs text-[#827970]">{inq.guest_count.replace("-", " to ").replace("+", "+ guests").replace("under", "Under ")}</p>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="text-[#2D2D2D] text-sm font-medium">{inq.email}</p>
+                        {inq.phone && <p className="text-xs text-[#827970]">{inq.phone}</p>}
+                      </td>
+                      <td className="px-5 py-4">
+                        <p className="text-[#2D2D2D] text-sm font-medium">{inq.event_date || "—"}</p>
+                        {inq.location && <p className="text-xs text-[#827970]">{inq.location}</p>}
+                      </td>
+                      <td className="px-5 py-4">
+                        <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border capitalize ${getEventTypeColor(inq.event_type)}`}>
+                          {inq.event_type || "Other"}
+                        </span>
+                      </td>
+                      <td className="px-5 py-4 text-[#827970] text-xs font-medium">
+                        {timeAgo(inq.created_at)}
+                      </td>
+                      <td className="px-5 py-4">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => setSelectedInquiry(inq)}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100 text-[#827970] hover:text-[#2D2D2D] hover:bg-stone-200/50 transition"
+                            title="View Details"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">visibility</span>
+                          </button>
+                          <button
+                            onClick={() => handleDelete(inq.id)}
+                            disabled={deletingId === inq.id}
+                            className="flex h-8 w-8 items-center justify-center rounded-lg bg-stone-100 text-[#827970] hover:text-red-600 hover:bg-red-50 transition disabled:opacity-40"
+                            title="Delete"
+                          >
+                            {deletingId === inq.id ? (
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border border-stone-300 border-t-[#D67D5C]" />
+                            ) : (
+                              <span className="material-symbols-outlined text-[16px]">delete</span>
+                            )}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* Slide-over Panel for Inquiry details */}
+      {selectedInquiry && (
+        <div className="fixed inset-0 z-50 flex justify-end">
+          <div
+            className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm transition-opacity animate-fade-in"
+            onClick={() => setSelectedInquiry(null)}
+          />
+          <div className="relative w-full max-w-lg bg-white h-full shadow-2xl border-l border-[#EFE6DD] flex flex-col p-6 overflow-y-auto z-10 transition-transform duration-300 ease-out">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-[#EFE6DD] pb-4 mb-6">
+              <div>
+                <span className="text-[10px] font-bold text-[#D67D5C] uppercase tracking-wider">Inquiry Details</span>
+                <h2 className="text-xl font-bold text-[#2D2D2D] tracking-tight">{selectedInquiry.name}</h2>
+              </div>
+              <button
+                onClick={() => setSelectedInquiry(null)}
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-100 text-stone-600 hover:bg-stone-200 transition"
+              >
+                <span className="material-symbols-outlined text-[18px]">close</span>
+              </button>
+            </div>
+
+            {/* Info Grid */}
+            <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Email Address</span>
+                  <a href={`mailto:${selectedInquiry.email}`} className="text-sm font-semibold text-[#2D2D2D] hover:underline mt-1 block truncate">
+                    {selectedInquiry.email}
+                  </a>
+                </div>
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Phone Number</span>
+                  <p className="text-sm font-semibold text-[#2D2D2D] mt-1">
+                    {selectedInquiry.phone || "N/A"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Event Date</span>
+                  <p className="text-sm font-semibold text-[#2D2D2D] mt-1">
+                    {selectedInquiry.event_date || "N/A"}
+                  </p>
+                </div>
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Location</span>
+                  <p className="text-sm font-semibold text-[#2D2D2D] mt-1">
+                    {selectedInquiry.location || "N/A"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Event Type</span>
+                  <div>
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold border capitalize mt-2 ${getEventTypeColor(selectedInquiry.event_type)}`}>
+                      {selectedInquiry.event_type || "Other"}
+                    </span>
+                  </div>
+                </div>
+                <div className="rounded-xl bg-stone-50/50 p-4 border border-[#EFE6DD]">
+                  <span className="text-[10px] font-bold text-[#827970] uppercase tracking-wider block">Guest Count</span>
+                  <p className="text-sm font-semibold text-[#2D2D2D] mt-1">
+                    {selectedInquiry.guest_count
+                      ? selectedInquiry.guest_count.replace("-", " to ").replace("+", "+ guests").replace("under", "Under ")
+                      : "N/A"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Story/Message block */}
+              <div className="rounded-xl bg-[#FAF5EF]/50 p-5 border border-[#D67D5C]/15">
+                <span className="text-[10px] font-bold text-[#94492c] uppercase tracking-wider block mb-2">Event Story & Description</span>
+                {selectedInquiry.story ? (
+                  <p className="text-sm text-[#2D2D2D] leading-relaxed whitespace-pre-wrap font-serif italic bg-white p-4 rounded-lg border border-[#EFE6DD]/60 shadow-[0_2px_10px_rgba(148,73,44,0.02)]">
+                    "{selectedInquiry.story}"
+                  </p>
+                ) : (
+                  <p className="text-sm text-stone-400 italic">No description provided.</p>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-4 border-t border-[#EFE6DD]">
+                <a
+                  href={`mailto:${selectedInquiry.email}?subject=Inquiry regarding your ${selectedInquiry.event_type || "event"}`}
+                  className="flex-1 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#B36144] px-4 py-3 text-sm font-semibold text-white shadow-md hover:opacity-95 transition flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">reply</span>
+                  Reply via Email
+                </a>
+                <button
+                  onClick={() => handleDelete(selectedInquiry.id)}
+                  disabled={deletingId === selectedInquiry.id}
+                  className="rounded-xl border border-red-200 text-red-600 hover:bg-red-50 px-4 py-3 text-sm font-semibold transition flex items-center justify-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">delete</span>
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

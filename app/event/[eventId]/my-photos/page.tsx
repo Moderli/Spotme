@@ -96,6 +96,8 @@ export default function MyPhotosPage() {
         setAiMatched(true);
         setMatchStatus("matched");
       } else if (status === "processing") {
+        setPhotos([]);
+        setAiMatched(false);
         schedulePoll(storedGuestId);
       } else if (status === "no_face") {
         // Privacy mode: never fall back to all photos — show re-upload prompt
@@ -108,6 +110,8 @@ export default function MyPhotosPage() {
       } else {
         // 'uploaded' — trigger AI and poll
         if (sid && sUrl) {
+          setPhotos([]);
+          setAiMatched(false);
           triggerEmbedSelfie(storedGuestId, sUrl, sid);
           schedulePoll(storedGuestId);
         }
