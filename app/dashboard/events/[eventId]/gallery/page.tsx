@@ -10,7 +10,7 @@ export default async function GalleryPage({
   params: Promise<{ eventId: string }>;
 }) {
   const { eventId } = await params;
-  const photos = await fetchEventPhotos(eventId);
+  const photos = await fetchEventPhotos(eventId, 10000);
 
   return (
     <WorkspacePage
@@ -20,7 +20,7 @@ export default async function GalleryPage({
       title="Event photographs"
       detail="Curate, search and review the images guests are discovering from this event."
     >
-      <GalleryPanel photos={photos} />
+      <GalleryPanel eventId={eventId} photos={photos} />
     </WorkspacePage>
   );
 }

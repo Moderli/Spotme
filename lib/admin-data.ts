@@ -3,9 +3,9 @@
 // Uses service role client for full access (server-side only)
 // ============================================================
 import { createClient } from "@supabase/supabase-js";
-import type { Profile, Event, EventPhoto, Guest } from "@/types/database";
+import type { Profile, Event, EventPhoto, Guest, Inquiry, InquiryInsert } from "@/types/database";
 
-export type { Profile, Event, EventPhoto, Guest };
+export type { Profile, Event, EventPhoto, Guest, Inquiry, InquiryInsert };
 
 // Service-role client — never expose to browser
 function getAdminClient() {
@@ -499,6 +499,51 @@ export async function updatePhotographer(
 export async function deletePhotographer(id: string): Promise<{ success: boolean; error?: string }> {
   const supabase = getAdminClient();
   const { error } = await supabase.auth.admin.deleteUser(id);
+  if (error) return { success: false, error: error.message };
+  return { success: true };
+}
+
+// -------------------------------------------------------
+// Inquiries — public submission & admin review
+// -------------------------------------------------------
+export type InquiryRow = Inquiry;
+
+export async function insertInquiry(payload: InquiryInsert): Promise<{ data: Inquiry | null; error?: string }> {
+  const supabase = getAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("inquiries")
+    .insert(payload)
+    .select()
+    .single();
+
+  if (error) return { data: null, error: error.message };
+  return { data };
+}
+
+export async function fetchInquiries(): Promise<Inquiry[]> {
+  const supabase = getAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data, error } = await (supabase as any)
+    .from("inquiries")
+    .select("*")
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    console.error("[lib/admin-data] Error fetching inquiries:", error.message);
+    return [];
+  }
+  return data ?? [];
+}
+
+export async function deleteInquiry(id: string): Promise<{ success: boolean; error?: string }> {
+  const supabase = getAdminClient();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase as any)
+    .from("inquiries")
+    .delete()
+    .eq("id", id);
+
   if (error) return { success: false, error: error.message };
   return { success: true };
 }

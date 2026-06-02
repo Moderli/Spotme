@@ -18,15 +18,38 @@ export default function Inquire() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
 
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     if (!name || !email) return;
 
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
+    try {
+      const res = await fetch("/api/inquire", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          phone,
+          date,
+          location,
+          eventType,
+          guestCount,
+          story,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+
       setIsSubmitted(true);
-    }, 1500);
+    } catch (err) {
+      console.error("Failed to submit inquiry:", err);
+      alert("Inquiry submission failed. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -102,7 +125,7 @@ export default function Inquire() {
                           value={phone}
                           onChange={(e) => setPhone(e.target.value)}
                           className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-6 py-4 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
-                          placeholder="+1 (555) 000-0000"
+                          placeholder="+91 xxxxxxxx"
                         />
                       </div>
                       <div className="space-y-2">

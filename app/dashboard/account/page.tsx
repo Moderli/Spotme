@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DashboardShell, PageHeading } from "@/components/dashboard/shell";
+import { createClient } from "@/lib/supabase/client";
 
 
 
@@ -280,6 +281,137 @@ function ChangePlanModal({
   );
 }
 
+function ChangePasswordModal({
+  isOpen,
+  onClose,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!isOpen) return null;
+
+  const handleUpdatePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newPassword) {
+      setError("Password cannot be empty.");
+      return;
+    }
+    if (newPassword.length < 6) {
+      setError("Password must be at least 6 characters long.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    try {
+      const supabase = createClient();
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      });
+
+      if (updateError) {
+        throw new Error(updateError.message);
+      }
+
+      alert("Password updated successfully!");
+      setNewPassword("");
+      setConfirmPassword("");
+      setShowPassword(false);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || "Failed to update password.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-[#2D2D2D]/40 backdrop-blur-md" onClick={onClose} />
+      <div className="relative w-full max-w-md overflow-hidden rounded-[28px] border border-[#2D2D2D]/8 bg-white/90 p-6 shadow-2xl backdrop-blur-2xl sm:p-8 animate-page-enter">
+        <button onClick={onClose} className="absolute right-5 top-5 flex h-9 w-9 items-center justify-center rounded-xl bg-white/80 border border-[#2D2D2D]/6 hover:bg-[#FDF8F1] transition">
+          <span className="material-symbols-outlined text-[20px]">close</span>
+        </button>
+
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[#B36144]">Security</p>
+        <h2 className="mt-2 text-2xl font-bold tracking-tight text-[#2D2D2D]">Change password</h2>
+        <p className="mt-2 text-sm text-[#827970]">Update your account password below.</p>
+
+        <form onSubmit={handleUpdatePassword} className="mt-6 space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#574F49]">New Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Minimum 6 characters"
+                className="w-full rounded-xl border border-[#2D2D2D]/8 bg-white/70 pl-3.5 pr-10 py-2.5 text-xs text-[#2D2D2D] focus:border-[#D67D5C]/40 focus:ring-1 focus:ring-[#D67D5C]/40 outline-none transition"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#827970] hover:text-[#2D2D2D] transition flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {showPassword ? "visibility_off" : "visibility"}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-xs font-semibold text-[#574F49]">Confirm New Password</label>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Re-enter password"
+                className="w-full rounded-xl border border-[#2D2D2D]/8 bg-white/70 pl-3.5 pr-10 py-2.5 text-xs text-[#2D2D2D] focus:border-[#D67D5C]/40 focus:ring-1 focus:ring-[#D67D5C]/40 outline-none transition"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[#827970] hover:text-[#2D2D2D] transition flex items-center justify-center"
+              >
+                <span className="material-symbols-outlined text-[18px]">
+                  {showPassword ? "visibility_off" : "visibility"}
+                </span>
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <p className="text-xs font-semibold text-red-500 bg-red-50 p-3 rounded-xl border border-red-100">
+              {error}
+            </p>
+          )}
+
+          <div className="mt-8 flex gap-3 pt-2">
+            <button type="button" onClick={onClose} className="flex-1 rounded-xl border border-[#2D2D2D]/8 bg-white py-3 text-sm font-semibold text-[#574F49] hover:bg-[#FDF8F1] transition">Cancel</button>
+            <button type="submit" disabled={loading} className="flex-1 rounded-xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] py-3 text-sm font-semibold text-white shadow-md hover:-translate-y-0.5 transition active:scale-[0.98] disabled:opacity-50">
+              {loading ? "Updating..." : "Update Password"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 /* ─── page ─── */
 export default function AccountPage() {
   const [profile, setProfile] = useState<{
@@ -293,6 +425,7 @@ export default function AccountPage() {
 
   const [loading, setLoading] = useState(true);
   const [isPlanOpen, setIsPlanOpen] = useState(false);
+  const [isPasswordOpen, setIsPasswordOpen] = useState(false);
 
   const loadProfile = () => {
     fetch("/api/photographer/stats")
@@ -452,7 +585,10 @@ export default function AccountPage() {
                       <p className="mt-0.5 text-xs text-[#827970]">{row.detail}</p>
                     </div>
                   </div>
-                  <button className="shrink-0 rounded-lg border border-[#2D2D2D]/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#2D2D2D] transition hover:border-[#D67D5C]/40 hover:bg-[#FDF8F1]">
+                  <button
+                    onClick={() => setIsPasswordOpen(true)}
+                    className="shrink-0 rounded-lg border border-[#2D2D2D]/8 bg-white px-3.5 py-1.5 text-xs font-semibold text-[#2D2D2D] transition hover:border-[#D67D5C]/40 hover:bg-[#FDF8F1]"
+                  >
                     {row.action}
                   </button>
                 </div>
@@ -467,6 +603,11 @@ export default function AccountPage() {
         onClose={() => setIsPlanOpen(false)}
         currentPlan={profile.plan}
         onUpdated={loadProfile}
+      />
+
+      <ChangePasswordModal
+        isOpen={isPasswordOpen}
+        onClose={() => setIsPasswordOpen(false)}
       />
     </DashboardShell>
   );

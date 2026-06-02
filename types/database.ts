@@ -84,6 +84,19 @@ export interface PhotoMatch {
   matched_at: string;
 }
 
+export interface Inquiry {
+  id: string;
+  name: string;
+  email: string;
+  phone: string | null;
+  event_date: string | null;
+  location: string | null;
+  event_type: string | null;
+  guest_count: string | null;
+  story: string | null;
+  created_at: string;
+}
+
 // -------------------------------------------------------
 // Insert / Update helpers
 // -------------------------------------------------------
@@ -109,6 +122,9 @@ export type GuestSelfieUpdate = Partial<Omit<GuestSelfie, "id" | "uploaded_at">>
 
 export type PhotoMatchInsert = Omit<PhotoMatch, "id" | "matched_at"> & { id?: string };
 export type PhotoMatchUpdate = Partial<Omit<PhotoMatch, "id" | "matched_at">>;
+
+export type InquiryInsert = Omit<Inquiry, "id" | "created_at"> & { id?: string; created_at?: string };
+export type InquiryUpdate = Partial<Omit<Inquiry, "id" | "created_at">>;
 
 // -------------------------------------------------------
 // Database definition (used by createClient<Database>())
@@ -151,6 +167,12 @@ export interface Database {
         Row: PhotoMatch;
         Insert: PhotoMatchInsert;
         Update: PhotoMatchUpdate;
+        Relationships: [];
+      };
+      inquiries: {
+        Row: Inquiry;
+        Insert: InquiryInsert;
+        Update: InquiryUpdate;
         Relationships: [];
       };
     };

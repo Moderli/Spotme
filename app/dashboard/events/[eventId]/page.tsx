@@ -1,6 +1,6 @@
 import { EventOverviewPanel } from "@/components/dashboard/workspace-panels";
 import { WorkspacePage } from "@/components/dashboard/workspace-page";
-import { fetchEvent, fetchEventPhotos, fetchGuests } from "@/lib/dashboard-data";
+import { fetchEvent, fetchEventPhotos, fetchGuests, fetchEventPhotoCount } from "@/lib/dashboard-data";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 
@@ -12,10 +12,11 @@ export default async function EventOverviewPage({
   params: Promise<{ eventId: string }>;
 }) {
   const { eventId } = await params;
-  const [event, photos, guests] = await Promise.all([
+  const [event, photos, guests, photoCount] = await Promise.all([
     fetchEvent(eventId),
     fetchEventPhotos(eventId),
     fetchGuests(eventId),
+    fetchEventPhotoCount(eventId),
   ]);
 
   if (!event) notFound();
@@ -40,6 +41,7 @@ export default async function EventOverviewPage({
         event={event}
         photos={photos}
         guests={guests}
+        photoCount={photoCount}
       />
     </WorkspacePage>
   );

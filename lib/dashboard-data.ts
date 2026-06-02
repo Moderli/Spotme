@@ -135,6 +135,24 @@ export async function fetchEventPhotos(
 }
 
 /**
+ * Fetch the exact total count of photos for an event.
+ */
+export async function fetchEventPhotoCount(eventId: string): Promise<number> {
+  const supabase = await createClient();
+  const { count, error } = await (supabase as any)
+    .from("event_photos")
+    .select("id", { count: "exact", head: true })
+    .eq("event_id", eventId);
+
+  if (error) {
+    console.error("fetchEventPhotoCount error:", error.message);
+    return 0;
+  }
+
+  return count ?? 0;
+}
+
+/**
  * Insert a photo record after uploading to storage.
  */
 export async function insertEventPhoto(
