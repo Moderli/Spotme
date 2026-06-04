@@ -7,6 +7,7 @@ import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
+import { sanitizeText, validateEmail } from "@/lib/auth-validate";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -16,15 +17,20 @@ export default function ForgotPassword() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email) return;
+    setError(null);
+
+    // ── Client-side validation ──────────────────────────────────────────────
+    const cleanEmail = sanitizeText(email).toLowerCase();
+    const emailErr = validateEmail(cleanEmail);
+    if (emailErr) { setError(emailErr); return; }
+    // ───────────────────────────────────────────────────────────────────────
 
     setIsSubmitting(true);
-    setError(null);
 
     try {
       const supabase = createClient();
       
-      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo: `${window.location.origin}/update-password`,
       });
 
@@ -36,8 +42,9 @@ export default function ForgotPassword() {
 
       setSuccess(true);
       setIsSubmitting(false);
-    } catch (err: any) {
-      setError(getAuthErrorMessage(err?.message, "Something went wrong. Please try again."));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
+      setError(getAuthErrorMessage(message, "Something went wrong. Please try again."));
       setIsSubmitting(false);
     }
   };
@@ -88,6 +95,8 @@ export default function ForgotPassword() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
+                  maxLength={320}
+                  autoComplete="email"
                   className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
                   placeholder="hello@domain.com"
                 />

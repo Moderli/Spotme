@@ -421,6 +421,14 @@ export async function fetchAllEvents(limit = 20): Promise<AdminEventRow[]> {
   );
 }
 
+// ── Plan entitlement configuration (single source of truth) ─────────────────
+// Keep in sync with app/api/payments/upgrade/route.ts PLAN_CONFIG
+const PLAN_ENTITLEMENTS: Record<string, { maxEvents: number; maxStorageGb: number }> = {
+  free: { maxEvents: 1, maxStorageGb: 10 },
+  pro: { maxEvents: 10, maxStorageGb: 100 },
+  unlimited: { maxEvents: 999999, maxStorageGb: 1000 },
+};
+
 // -------------------------------------------------------
 // Create a photographer account
 // -------------------------------------------------------
@@ -444,8 +452,7 @@ export async function createPhotographer(payload: {
   if (error) return { success: false, error: error.message };
 
   const plan = payload.plan ?? "free";
-  const maxEvents = plan === "free" ? 1 : plan === "pro" ? 5 : 999999;
-  const maxStorage = plan === "free" ? 10 : plan === "pro" ? 100 : 1000;
+  const { maxEvents, maxStorageGb } = PLAN_ENTITLEMENTS[plan] ?? PLAN_ENTITLEMENTS.free;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await (supabase as any).from("profiles").upsert({
@@ -456,7 +463,7 @@ export async function createPhotographer(payload: {
     bio: payload.bio ?? null,
     plan,
     max_events: maxEvents,
-    max_storage_gb: maxStorage,
+    max_storage_gb: maxStorageGb,
   });
 
   return { success: true };
@@ -479,8 +486,9 @@ export async function updatePhotographer(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const updates: any = { ...payload };
   if (payload.plan) {
-    updates.max_events = payload.plan === "free" ? 1 : payload.plan === "pro" ? 5 : 999999;
-    updates.max_storage_gb = payload.plan === "free" ? 10 : payload.plan === "pro" ? 100 : 1000;
+    const { maxEvents, maxStorageGb } = PLAN_ENTITLEMENTS[payload.plan] ?? PLAN_ENTITLEMENTS.free;
+    updates.max_events = maxEvents;
+    updates.max_storage_gb = maxStorageGb;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

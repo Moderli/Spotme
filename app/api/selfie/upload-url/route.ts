@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-// Server-side admin client — uses service role key
-const adminSupabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  { auth: { persistSession: false } }
-);
-
 /**
  * POST /api/selfie/upload-url
  *
@@ -18,9 +11,21 @@ const adminSupabase = createClient(
  * event. Without this, any caller with a known eventId could generate unlimited
  * signed upload URLs for storage exhaustion.
  *
+ * L-1 fix: admin client is created per-request so missing env vars are caught
+ * and surfaced as a proper 500 rather than a silent module-load failure.
+ *
  * Body: { eventId: string, guestId: string, ext: string }
  * Response: { signedUrl: string, storagePath: string, token: string }
  */
+
+function getAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) {
+    throw new Error("Supabase env vars are not configured (NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)");
+  }
+  return createClient(url, key, { auth: { persistSession: false } });
+}
 export async function POST(req: NextRequest) {
   try {
     const { eventId, guestId, ext: rawExt } = await req.json();
@@ -31,6 +36,8 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+
+    const adminSupabase = getAdminClient();
 
     // ── S-05 Fix: Validate the guestId belongs to this event ─────────────────
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
+import { validatePassword } from "@/lib/auth-validate";
 
 export default function UpdatePassword() {
   const router = useRouter();
@@ -61,13 +62,14 @@ export default function UpdatePassword() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!password || password.length < 6) {
-      setError("Password must be at least 6 characters long.");
-      return;
-    }
+    setError(null);
+
+    // ── Client-side validation ──────────────────────────────────────────────
+    const passErr = validatePassword(password);
+    if (passErr) { setError(passErr); return; }
+    // ───────────────────────────────────────────────────────────────────────
 
     setIsSubmitting(true);
-    setError(null);
 
     try {
       const supabase = createClient();
@@ -90,8 +92,9 @@ export default function UpdatePassword() {
         router.push("/dashboard");
         router.refresh();
       }, 2000);
-    } catch (err: any) {
-      setError(getAuthErrorMessage(err?.message, "Something went wrong while updating your password. Please try again."));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
+      setError(getAuthErrorMessage(message, "Something went wrong while updating your password. Please try again."));
       setIsSubmitting(false);
     }
   };
@@ -155,9 +158,11 @@ export default function UpdatePassword() {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    minLength={6}
+                    minLength={8}
+                    maxLength={128}
+                    autoComplete="new-password"
                     className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl pl-4 pr-11 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
-                    placeholder="At least 6 characters"
+                    placeholder="At least 8 characters"
                   />
                   <button
                     type="button"

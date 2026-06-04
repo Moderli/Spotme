@@ -3,10 +3,11 @@ import { createClient } from "@/lib/supabase/server";
 import crypto from "crypto";
 
 // ── Server-side plan config map ───────────────────────────────────────────────
+// Keep in sync with lib/admin-data.ts PLAN_ENTITLEMENTS
 const PLAN_CONFIG: Record<string, { maxEvents: number; maxStorageGb: number }> = {
   free:      { maxEvents: 1,      maxStorageGb: 10   },
   pro:       { maxEvents: 10,     maxStorageGb: 100  },
-  unlimited: { maxEvents: 999999, maxStorageGb: 500  },
+  unlimited: { maxEvents: 999999, maxStorageGb: 1000 },
 };
 
 /**
@@ -42,8 +43,21 @@ export async function POST(request: Request) {
       const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
 
       if (!razorpaySecret) {
-        // Razorpay not configured — allow sandbox simulator flow (dev/testing only)
-        console.warn("[payments/upgrade] RAZORPAY_KEY_SECRET not set — allowing unsecured upgrade (sandbox mode)");
+        // L-3: Razorpay not configured — sandbox mode allows unsecured upgrades.
+        // ⚠️  THIS MUST NEVER REACH PRODUCTION — set RAZORPAY_KEY_SECRET in your env.
+        if (process.env.NODE_ENV === "production") {
+          console.error(
+            "[payments/upgrade] ⛔ RAZORPAY_KEY_SECRET is missing in a PRODUCTION environment. " +
+            "Paid plan upgrade is being rejected to prevent unsecured access."
+          );
+          return NextResponse.json(
+            { error: "Payment system not configured. Please contact support." },
+            { status: 503 }
+          );
+        }
+        console.warn(
+          "[payments/upgrade] RAZORPAY_KEY_SECRET not set — allowing unsecured upgrade (SANDBOX/DEV only)"
+        );
       } else {
         // Verify all three Razorpay tokens are present
         if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {

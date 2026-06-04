@@ -5,36 +5,47 @@ import Header from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
+import { sanitizeText, validateRegisterForm } from "@/lib/auth-validate";
 
 export default function Register() {
-  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<{ fullName?: string; email?: string; password?: string }>({});
   const [success, setSuccess] = useState(false);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!fullName || !email || !password) return;
+    setError(null);
+    setFieldErrors({});
+
+    // ── Client-side validation ──────────────────────────────────────────────
+    const cleanName = sanitizeText(fullName);
+    const cleanEmail = sanitizeText(email).toLowerCase();
+
+    const validationErrors = validateRegisterForm(cleanName, cleanEmail, password);
+    if (validationErrors) {
+      setFieldErrors(validationErrors);
+      return;
+    }
+    // ───────────────────────────────────────────────────────────────────────
 
     setIsSubmitting(true);
-    setError(null);
 
     try {
       const supabase = createClient();
-      
+
       const { data, error: authError } = await supabase.auth.signUp({
-        email,
+        email: cleanEmail,
         password,
         options: {
           data: {
-            full_name: fullName,
+            full_name: cleanName,
           },
         },
       });
@@ -45,10 +56,25 @@ export default function Register() {
         return;
       }
 
+      // ── Duplicate email detection ─────────────────────────────────────────
+      // Supabase's signUp() does NOT error on duplicate emails (to prevent
+      // user enumeration). Instead it returns an empty `identities` array.
+      // We detect this and show a helpful message rather than falsely claiming
+      // the verification email was sent.
+      if (data.user && data.user.identities?.length === 0) {
+        setError(
+          "An account with this email already exists. Please sign in or reset your password if you've forgotten it."
+        );
+        setIsSubmitting(false);
+        return;
+      }
+      // ─────────────────────────────────────────────────────────────────────
+
       setSuccess(true);
       setIsSubmitting(false);
-    } catch (err: any) {
-      setError(getAuthErrorMessage(err?.message, "Something went wrong during registration. Please try again."));
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : undefined;
+      setError(getAuthErrorMessage(message, "Something went wrong during registration. Please try again."));
       setIsSubmitting(false);
     }
   };
@@ -72,13 +98,13 @@ export default function Register() {
               <span className="material-symbols-outlined text-primary text-5xl mb-4">mark_email_read</span>
               <h2 className="text-xl font-serif font-bold text-on-surface mb-2">Verify your email</h2>
               <p className="text-sm text-on-surface-variant leading-relaxed mb-6">
-                We've sent a verification link to <strong className="text-primary">{email}</strong>. Please check your inbox and follow the instructions to verify your account.
+                We&apos;ve sent a verification link to <strong className="text-primary">{sanitizeText(email).toLowerCase()}</strong>. Please check your inbox and follow the instructions to verify your account.
               </p>
               <div className="text-xs text-on-surface-variant border-t border-outline-variant/10 pt-4 w-full mb-6">
-                Didn't receive the email? Check your spam folder or try signing up again.
+                Didn&apos;t receive the email? Check your spam folder or try signing up again.
               </div>
-              <Link 
-                href="/login" 
+              <Link
+                href="/login"
                 className="inline-flex items-center gap-2 text-primary font-semibold text-sm hover:underline"
               >
                 <span className="material-symbols-outlined text-[18px]">arrow_back</span>
@@ -86,10 +112,11 @@ export default function Register() {
               </Link>
             </div>
           ) : (
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-6" noValidate>
               {error && (
-                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 animate-fade-in">
-                  {error}
+                <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl px-4 py-3 animate-fade-in flex gap-2 items-start">
+                  <span className="material-symbols-outlined text-red-500 text-[18px] shrink-0 mt-0.5">warning</span>
+                  <span>{error}</span>
                 </div>
               )}
 
@@ -102,9 +129,16 @@ export default function Register() {
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
+                  maxLength={200}
+                  autoComplete="name"
+                  className={`w-full bg-surface-bright border-none ring-1 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans ${
+                    fieldErrors.fullName ? "ring-red-400" : "ring-outline-variant/30"
+                  }`}
                   placeholder="Your full name"
                 />
+                {fieldErrors.fullName && (
+                  <p className="text-red-600 text-xs px-1">{fieldErrors.fullName}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -116,9 +150,16 @@ export default function Register() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
+                  maxLength={320}
+                  autoComplete="email"
+                  className={`w-full bg-surface-bright border-none ring-1 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans ${
+                    fieldErrors.email ? "ring-red-400" : "ring-outline-variant/30"
+                  }`}
                   placeholder="hello@domain.com"
                 />
+                {fieldErrors.email && (
+                  <p className="text-red-600 text-xs px-1">{fieldErrors.email}</p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -131,9 +172,13 @@ export default function Register() {
                     type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    minLength={6}
-                    className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl pl-4 pr-11 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
-                    placeholder="At least 6 characters"
+                    minLength={8}
+                    maxLength={128}
+                    autoComplete="new-password"
+                    className={`w-full bg-surface-bright border-none ring-1 rounded-xl pl-4 pr-11 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans ${
+                      fieldErrors.password ? "ring-red-400" : "ring-outline-variant/30"
+                    }`}
+                    placeholder="At least 8 characters"
                   />
                   <button
                     type="button"
@@ -146,6 +191,13 @@ export default function Register() {
                     </span>
                   </button>
                 </div>
+                {fieldErrors.password ? (
+                  <p className="text-red-600 text-xs px-1">{fieldErrors.password}</p>
+                ) : (
+                  <p className="text-xs text-on-surface-variant px-1">
+                    Minimum 8 characters
+                  </p>
+                )}
               </div>
 
               <button

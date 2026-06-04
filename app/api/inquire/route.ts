@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { InquiryInsert } from "@/types/database";
+import { rateLimit } from "@/lib/rate-limit";
 
 /**
  * POST /api/inquire
@@ -10,14 +11,55 @@ import type { InquiryInsert } from "@/types/database";
  * S-09 fix: uses the anon Supabase client (not service-role) to follow
  * the principle of least privilege. The inquiries table grants INSERT
  * to anon via a simple RLS policy.
+ *
+ * M-2 fix: IP-based rate limiting — 5 submissions per 10 minutes.
  */
 export async function POST(req: NextRequest) {
+  // ── M-2: Rate limit by IP — 5 requests per 10 minutes ─────────────────────
+  const ip =
+    req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
+    req.headers.get("x-real-ip") ??
+    "unknown";
+
+  const { allowed, remaining, resetAt } = rateLimit(
+    `inquire:${ip}`,
+    5,
+    10 * 60 * 1000 // 10-minute window
+  );
+
+  if (!allowed) {
+    const retryAfterSecs = Math.ceil((resetAt - Date.now()) / 1000);
+    return NextResponse.json(
+      { error: "Too many submissions. Please wait a few minutes before trying again." },
+      {
+        status: 429,
+        headers: {
+          "Retry-After": String(retryAfterSecs),
+          "X-RateLimit-Remaining": "0",
+        },
+      }
+    );
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   try {
     const body = await req.json();
     const { name, email, phone, date, location, eventType, guestCount, story } = body;
 
+    // Basic presence check
     if (!name || !email) {
       return NextResponse.json({ error: "Name and Email are required." }, { status: 400 });
+    }
+
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return NextResponse.json({ error: "Please enter a valid email address." }, { status: 400 });
+    }
+
+    // Field max-length guards (prevent DB stuffing)
+    if (name.length > 200 || email.length > 320) {
+      return NextResponse.json({ error: "Input exceeds maximum allowed length." }, { status: 400 });
     }
 
     // Use anon key — least privilege for a public insert endpoint
@@ -61,6 +103,7 @@ export async function POST(req: NextRequest) {
     console.log(`   Type: ${eventType}`);
     console.log(`   Guest Count: ${guestCount}`);
     console.log(`   Story: ${story || "N/A"}`);
+    console.log(`   Remaining requests for this IP: ${remaining}`);
     console.log("=======================================================\n");
 
     return NextResponse.json(data, { status: 200 });
