@@ -130,7 +130,7 @@ function PhoneMockup({ album }: { album: AlbumType }) {
       <div className="flex-grow flex flex-col justify-between px-4 pb-4 pt-2">
         {/* App Header inside Phone */}
         <div className="flex justify-between items-center border-b border-outline-variant/10 pb-2">
-          <span className="font-serif italic font-bold text-sm text-primary tracking-wide">Revela</span>
+          <span className="font-serif italic font-bold text-sm text-primary tracking-wide">Spotme</span>
           <div className="flex items-center gap-1.5 bg-green-50 text-[10px] font-bold px-2 py-0.5 rounded-full border border-green-200">
             <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
             <span className="text-green-700 tracking-wide uppercase text-[8px]">Live Sync</span>
@@ -455,7 +455,7 @@ export default function Home() {
               <div className="w-full md:w-2/3">
                 <span className="material-symbols-outlined text-primary text-6xl mb-8 opacity-20">format_quote</span>
                 <blockquote className="font-serif text-2xl md:text-3xl text-on-surface italic mb-8 leading-relaxed">
-                  &quot;Revela turned our wedding night into a shared experience. Seeing our friends receive their photos the moment they were taken felt like magic—it kept the celebration alive for weeks.&quot;
+                  &quot;Spotme turned our wedding night into a shared experience. Seeing our friends receive their photos the moment they were taken felt like magic—it kept the celebration alive for weeks.&quot;
                 </blockquote>
                 <div>
                   <p className="font-sans font-semibold text-sm text-on-surface">Elena &amp; James Richardson</p>

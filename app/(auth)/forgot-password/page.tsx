@@ -7,7 +7,6 @@ import MobileNav from "@/components/landing/mobile-nav";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage } from "@/lib/auth-errors";
-import { sanitizeText, validateEmail } from "@/lib/auth-validate";
 
 export default function ForgotPassword() {
   const [email, setEmail] = useState("");
@@ -17,20 +16,15 @@ export default function ForgotPassword() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-
-    // ── Client-side validation ──────────────────────────────────────────────
-    const cleanEmail = sanitizeText(email).toLowerCase();
-    const emailErr = validateEmail(cleanEmail);
-    if (emailErr) { setError(emailErr); return; }
-    // ───────────────────────────────────────────────────────────────────────
+    if (!email) return;
 
     setIsSubmitting(true);
+    setError(null);
 
     try {
       const supabase = createClient();
       
-      const { error: authError } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/update-password`,
       });
 
@@ -42,9 +36,8 @@ export default function ForgotPassword() {
 
       setSuccess(true);
       setIsSubmitting(false);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : undefined;
-      setError(getAuthErrorMessage(message, "Something went wrong. Please try again."));
+    } catch (err: any) {
+      setError(getAuthErrorMessage(err?.message, "Something went wrong. Please try again."));
       setIsSubmitting(false);
     }
   };
@@ -56,7 +49,7 @@ export default function ForgotPassword() {
       <main className="flex-grow flex items-center justify-center py-20 px-margin-mobile">
         <div className="w-full max-w-md bg-surface-container-lowest p-8 md:p-12 rounded-[32px] soft-lift border border-outline-variant/10 animate-fade-in">
           <div className="text-center mb-8">
-            <span className="font-serif text-3xl font-bold text-primary italic">Revela</span>
+            <span className="font-serif text-3xl font-bold text-primary italic">Spotme</span>
             <h1 className="text-2xl font-serif font-bold text-on-surface mt-4">Reset password</h1>
             <p className="text-sm text-on-surface-variant mt-2">
               Enter your email to receive a password reset link.
@@ -95,8 +88,6 @@ export default function ForgotPassword() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  maxLength={320}
-                  autoComplete="email"
                   className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
                   placeholder="hello@domain.com"
                 />

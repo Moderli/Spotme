@@ -8,7 +8,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { getAuthErrorMessage, getUrlAuthErrorMessage } from "@/lib/auth-errors";
-import { sanitizeText, validateLoginForm } from "@/lib/auth-validate";
 
 export default function Login() {
   const router = useRouter();
@@ -17,7 +16,6 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -33,25 +31,16 @@ export default function Login() {
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setError(null);
-    setFieldErrors({});
-
-    // ── Client-side validation ──────────────────────────────────────────────
-    const cleanEmail = sanitizeText(email).toLowerCase();
-    const validationErrors = validateLoginForm(cleanEmail, password);
-    if (validationErrors) {
-      setFieldErrors(validationErrors);
-      return;
-    }
-    // ───────────────────────────────────────────────────────────────────────
+    if (!email || !password) return;
 
     setIsSubmitting(true);
+    setError(null);
 
     try {
       const supabase = createClient();
       
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
+      const { data, error: authError } = await supabase.auth.signInWithPassword({
+        email,
         password,
       });
 
@@ -64,9 +53,8 @@ export default function Login() {
       // Redirect to dashboard on success
       router.push("/dashboard");
       router.refresh();
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : undefined;
-      setError(getAuthErrorMessage(message, "Something went wrong during sign in. Please try again."));
+    } catch (err: any) {
+      setError(getAuthErrorMessage(err?.message, "Something went wrong during sign in. Please try again."));
       setIsSubmitting(false);
     }
   };
@@ -78,7 +66,7 @@ export default function Login() {
       <main className="flex-grow flex items-center justify-center py-20 px-margin-mobile">
         <div className="w-full max-w-md bg-surface-container-lowest p-8 md:p-12 rounded-[32px] soft-lift border border-outline-variant/10 animate-fade-in">
           <div className="text-center mb-8">
-            <span className="font-serif text-3xl font-bold text-primary italic">Revela</span>
+            <span className="font-serif text-3xl font-bold text-primary italic">Spotme</span>
             <h1 className="text-2xl font-serif font-bold text-on-surface mt-4">Welcome Back</h1>
             <p className="text-sm text-on-surface-variant mt-2">
               Sign in to manage your memories and galleries.
@@ -107,16 +95,9 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                maxLength={320}
-                autoComplete="email"
-                className={`w-full bg-surface-bright border-none ring-1 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans ${
-                  fieldErrors.email ? "ring-red-400" : "ring-outline-variant/30"
-                }`}
+                className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl px-4 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
                 placeholder="hello@domain.com"
               />
-              {fieldErrors.email && (
-                <p className="text-red-600 text-xs px-1">{fieldErrors.email}</p>
-              )}
             </div>
 
             <div className="space-y-2">
@@ -134,11 +115,7 @@ export default function Login() {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  maxLength={128}
-                  autoComplete="current-password"
-                  className={`w-full bg-surface-bright border-none ring-1 rounded-xl pl-4 pr-11 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans ${
-                    fieldErrors.password ? "ring-red-400" : "ring-outline-variant/30"
-                  }`}
+                  className="w-full bg-surface-bright border-none ring-1 ring-outline-variant/30 rounded-xl pl-4 pr-11 py-3.5 focus:ring-2 focus:ring-primary quint-ease outline-none text-sm font-sans"
                   placeholder="••••••••"
                 />
                 <button
@@ -152,9 +129,6 @@ export default function Login() {
                   </span>
                 </button>
               </div>
-              {fieldErrors.password && (
-                <p className="text-red-600 text-xs px-1">{fieldErrors.password}</p>
-              )}
             </div>
 
             <div className="flex items-center gap-2 px-1">
@@ -184,7 +158,7 @@ export default function Login() {
             </button>
 
             <div className="text-center pt-4 border-t border-outline-variant/10 text-xs text-on-surface-variant font-sans">
-              New to Revela?{" "}
+              New to Spotme?{" "}
               <Link href="/register" className="text-primary font-semibold hover:underline">
                 Create an account
               </Link>

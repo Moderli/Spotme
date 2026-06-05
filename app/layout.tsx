@@ -15,8 +15,8 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "Revela | Digital Keepsakes for Your Most Cherished Moments",
-  description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Revela bridges the gap between the camera and the guest.",
+  title: "Spotme | Digital Keepsakes for Your Most Cherished Moments",
+  description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Spotme bridges the gap between the camera and the guest.",
 };
 
 export default function RootLayout({
