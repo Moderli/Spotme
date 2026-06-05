@@ -17,11 +17,21 @@ export default function FindMePage() {
   const [processingDots, setProcessingDots] = useState(0);
   const [preview, setPreview] = useState<string | null>(null);
   const [guestId, setGuestId] = useState<string | null>(null);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [galleryError, setGalleryError] = useState<string | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(`guest_id_${eventId}`);
     setGuestId(stored);
   }, [eventId]);
+
+  const validateFile = (file: File): string | null => {
+    if (file.size > 10 * 1024 * 1024) return "Image must be under 10 MB.";
+    if (!["image/jpeg","image/png","image/webp","image/heic"].includes(file.type)) {
+      return "Please upload a JPEG, PNG, WebP, or HEIC image.";
+    }
+    return null;
+  };
 
   const handleFileSelect = async (file: File) => {
     if (!file) return;
@@ -127,7 +137,17 @@ export default function FindMePage() {
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) handleFileSelect(file);
+            if (file) {
+              const err = validateFile(file);
+              if (err) {
+                setCameraError(err);
+                if (cameraInputRef.current) cameraInputRef.current.value = "";
+                e.target.value = "";
+                return;
+              }
+              setCameraError(null);
+              handleFileSelect(file);
+            }
             e.target.value = "";
           }}
         />
@@ -140,7 +160,17 @@ export default function FindMePage() {
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) handleFileSelect(file);
+            if (file) {
+              const err = validateFile(file);
+              if (err) {
+                setGalleryError(err);
+                if (galleryInputRef.current) galleryInputRef.current.value = "";
+                e.target.value = "";
+                return;
+              }
+              setGalleryError(null);
+              handleFileSelect(file);
+            }
             e.target.value = "";
           }}
         />
@@ -171,7 +201,7 @@ export default function FindMePage() {
             {/* Upload circle — opens camera */}
             <button
               onClick={() => cameraInputRef.current?.click()}
-              disabled={!guestId}
+              disabled={!guestId || step !== "idle"}
               className="group mx-auto mt-8 flex h-48 w-48 flex-col items-center justify-center rounded-full border-[3px] border-dashed border-[#D67D5C]/30 bg-gradient-to-br from-[#FDF8F1] to-[#FFF5EE] transition-all duration-300 hover:border-[#D67D5C]/60 hover:shadow-[0_0_40px_rgba(214,125,92,0.1)] active:scale-[0.97] disabled:opacity-50 disabled:cursor-not-allowed sm:h-56 sm:w-56"
             >
               <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#D67D5C]/10 text-[#B36144] transition-transform duration-300 group-hover:scale-110">
@@ -184,12 +214,25 @@ export default function FindMePage() {
             {/* Secondary button — opens photo library */}
             <button
               onClick={() => galleryInputRef.current?.click()}
-              disabled={!guestId}
+              disabled={!guestId || step !== "idle"}
               className="mx-auto mt-5 flex h-11 items-center gap-2 rounded-xl border border-[#2D2D2D]/8 bg-white px-5 text-xs font-semibold text-[#574F49] transition hover:bg-[#FDF8F1] active:scale-[0.98] disabled:opacity-50"
             >
               <span className="material-symbols-outlined text-[18px]">photo_library</span>
               Choose from gallery
             </button>
+
+            {cameraError && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700 text-left">
+                <span className="material-symbols-outlined text-[16px] mt-0.5 shrink-0">error</span>
+                <span>{cameraError}</span>
+              </div>
+            )}
+            {galleryError && (
+              <div className="mt-3 flex items-start gap-2 rounded-xl bg-red-50 border border-red-200 px-4 py-3 text-xs text-red-700 text-left">
+                <span className="material-symbols-outlined text-[16px] mt-0.5 shrink-0">error</span>
+                <span>{galleryError}</span>
+              </div>
+            )}
 
             <Link
               href={`/event/${eventId}/gallery`}

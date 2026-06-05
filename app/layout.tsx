@@ -14,9 +14,37 @@ const plusJakarta = Plus_Jakarta_Sans({
   weight: ["400", "500", "600", "700"],
 });
 
+const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+  ? process.env.NEXT_PUBLIC_APP_URL
+  : process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : "https://stopme.in";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(baseUrl),
   title: "Spotme | Digital Keepsakes for Your Most Cherished Moments",
-  description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Spotme bridges the gap between the camera and the guest.",
+  description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Revela bridges the gap between the camera and the guest.",
+  openGraph: {
+    title: "Spotme | Digital Keepsakes for Your Most Cherished Moments",
+    description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Revela bridges the gap between the camera and the guest.",
+    type: "website",
+    locale: "en_US",
+    siteName: "Spotme",
+    images: [
+      {
+        url: "/opengraph-image.png",
+        width: 1200,
+        height: 630,
+        alt: "Spotme - Digital Keepsakes",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Spotme | Digital Keepsakes for Your Most Cherished Moments",
+    description: "Capture every smile and deliver it instantly with the warmth and care it deserves. Spotme bridges the gap between the camera and the guest.",
+    images: ["/opengraph-image.png"],
+  },
 };
 
 export default function RootLayout({
