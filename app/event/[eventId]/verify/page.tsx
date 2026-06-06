@@ -51,6 +51,7 @@ export default function VerifyPage() {
 
     const fullPhone = `${countryCode}${phone}`;
 
+    // Register the guest (this will also create and assign the guest session cookie)
     const guest = await registerGuest(eventId, fullPhone, name.trim());
 
     if (!guest) {
@@ -72,6 +73,7 @@ export default function VerifyPage() {
         : `/event/${eventId}/gallery`);
     }, 1500);
   };
+
 
   return (
     <div className="flex min-h-[calc(100vh-56px)] items-center justify-center px-5 py-10 sm:px-8">

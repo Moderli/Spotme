@@ -57,7 +57,9 @@ export async function GET(req: NextRequest) {
     const data = await res.json();
     return NextResponse.json(data);
   } catch (err) {
-    console.error("[ai-health route] Failed to fetch live AI health:", err);
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    const errorName = err instanceof Error ? err.name : "UnknownError";
+    console.warn(`[ai-health route] AI service health check failed (${errorName}: ${errorMsg})`);
     return NextResponse.json({
       status: "offline",
       error: "AI service is offline or unreachable."

@@ -38,9 +38,9 @@ const securityHeaders = [
       // switch to nonce-based CSP after a full script audit.
       "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://checkout.razorpay.com",
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-      "img-src 'self' data: blob: https://*.supabase.co",
+      "img-src 'self' data: blob: https://*.supabase.co https://api.qrserver.com https://images.unsplash.com",
       "font-src 'self' data: https://fonts.gstatic.com",
-      "connect-src 'self' https://*.supabase.co https://api.razorpay.com wss://*.supabase.co",
+      "connect-src 'self' https://*.supabase.co https://api.razorpay.com https://api.qrserver.com wss://*.supabase.co",
       "frame-src https://api.razorpay.com https://checkout.razorpay.com",
       "frame-ancestors 'none'",
       "base-uri 'self'",

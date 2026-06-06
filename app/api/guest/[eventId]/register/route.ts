@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hasEventSession } from "@/lib/guest-session";
+import { cookies } from "next/headers";
+import { signEventToken, verifyEventToken, SESSION_DURATION } from "@/lib/guest-session";
 import { checkCsrf, checkBodySize } from "@/lib/api-guard";
 
 // ── F-17 Fix: Per-request factory instead of module-level singleton ───────────
@@ -39,13 +40,22 @@ export async function POST(
     return NextResponse.json({ error: "Missing eventId" }, { status: 400 });
   }
 
-  // 1. Verify guest session cookie for this event
-  const isAuthorized = await hasEventSession(eventId);
-  if (!isAuthorized) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
   try {
+    const adminClient = getAdminClient();
+
+    // 1. Validate that the event actually exists and is active
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: event, error: eventError } = await (adminClient as any)
+      .from("events")
+      .select("id")
+      .eq("id", eventId)
+      .eq("status", "active")
+      .eq("qr_active", true)
+      .maybeSingle();
+
+    if (eventError || !event) {
+      return NextResponse.json({ error: "Invalid or inactive event" }, { status: 404 });
+    }
     const { phone: rawPhone, displayName: rawName } = await req.json();
 
     // ── F-03: Validate and normalise phone number ──────────────────────────
@@ -77,8 +87,6 @@ export async function POST(
       );
     }
 
-    const adminClient = getAdminClient();
-
     // 2. Check if guest already exists for this event + phone
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: existing, error: selectError } = await (adminClient as any)
@@ -93,24 +101,51 @@ export async function POST(
       return NextResponse.json({ error: selectError.message }, { status: 500 });
     }
 
-    if (existing) {
-      return NextResponse.json(existing);
+    let guestRecord = existing;
+
+    if (!guestRecord) {
+      // 3. Register a new guest
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: newGuest, error: insertError } = await (adminClient as any)
+        .from("guests")
+        .insert({ event_id: eventId, phone, display_name: displayName })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error("[guest/register] DB insert error:", insertError.message);
+        return NextResponse.json({ error: insertError.message }, { status: 500 });
+      }
+      guestRecord = newGuest;
     }
 
-    // 3. Register a new guest
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data: newGuest, error: insertError } = await (adminClient as any)
-      .from("guests")
-      .insert({ event_id: eventId, phone, display_name: displayName })
-      .select()
-      .single();
+    // 4. Assign the session cookie to the guest for this event
+    const cookieStore = await cookies();
+    const existingCookie = cookieStore.get("spotme_guest_session")?.value;
 
-    if (insertError) {
-      console.error("[guest/register] DB insert error:", insertError.message);
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+    let payload = { access: {} as Record<string, number> };
+
+    if (existingCookie) {
+      const verified = verifyEventToken(existingCookie);
+      if (verified) {
+        payload = verified;
+      }
     }
 
-    return NextResponse.json(newGuest);
+    // Grant/refresh access for this specific eventId
+    payload.access[eventId] = Date.now() + SESSION_DURATION;
+
+    const token = signEventToken(payload);
+
+    cookieStore.set("spotme_guest_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+      path: "/",
+    });
+
+    return NextResponse.json(guestRecord);
   } catch (err) {
     console.error("[guest/register] Error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
