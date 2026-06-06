@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getGuestEvent, fetchGuestGallery } from "@/lib/guest-data-server";
+import { getGuestEvent, getPublicPhotoCount } from "@/lib/guest-data-server";
 import type { Event } from "@/types/database";
 
 export const dynamic = "force-dynamic";
@@ -17,8 +17,8 @@ export default async function EventLandingPage({
 
   const privacyMode = (event as Event & { privacy_mode?: boolean }).privacy_mode ?? false;
 
-  // Only fetch photo count when not in privacy mode (no point revealing it)
-  const photos = privacyMode ? [] : await fetchGuestGallery(eventId);
+  // Fetch photo count for the badge (no session required — public info for non-private events)
+  const photoCount = privacyMode ? 0 : await getPublicPhotoCount(eventId);
 
   // Steps change depending on privacy mode
   const steps = privacyMode
@@ -86,11 +86,11 @@ export default async function EventLandingPage({
                 <span className="font-semibold">Privacy Mode is on.</span> Your photos are shared only with you.
               </p>
             </div>
-          ) : photos.length > 0 ? (
+          ) : photoCount > 0 ? (
             <div className="mb-6 flex items-center gap-2 rounded-2xl bg-gradient-to-r from-[#FDF8F1] to-[#FFF3EB] px-4 py-3">
               <span className="material-symbols-outlined text-[18px] text-[#D67D5C]">photo_library</span>
               <p className="text-sm text-[#574F49]">
-                <span className="font-semibold text-[#2D2D2D]">{photos.length}</span> photos available to discover
+                <span className="font-semibold text-[#2D2D2D]">{photoCount}</span> photos available to discover
               </p>
             </div>
           ) : null}

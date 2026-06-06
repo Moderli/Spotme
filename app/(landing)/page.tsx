@@ -1,10 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import Header from "@/components/landing/navbar";
 import Footer from "@/components/landing/footer";
 import MobileNav from "@/components/landing/mobile-nav";
-import Link from "next/link";
+
+// Import custom PNGs
+import catCameraManPointing from "../cat_camera_man_pointing.png";
+import holdingPhone from "../holding_phone.png";
+import showcasingPrivatePhotos from "../Showcasing_private_photos.png";
 
 const carouselImages = [
   "https://images.unsplash.com/photo-1511285560929-80b456fea0bc?q=80&w=800&auto=format&fit=crop", // Wedding
@@ -58,46 +64,47 @@ export default function Home() {
       
       <main className="flex-grow">
         {/* Centered Hero Section */}
-        <section className="relative min-h-[750px] flex items-center justify-center overflow-hidden bg-background">
+        <section className="relative flex flex-col items-center justify-center overflow-hidden bg-background pt-24 pb-24 md:pb-32">
           {/* Decorative ambient gradients */}
           <div className="absolute top-1/4 left-1/10 w-96 h-96 bg-primary/5 rounded-full blur-3xl float-anim"></div>
           <div className="absolute bottom-1/4 right-1/10 w-96 h-96 bg-secondary-container/10 rounded-full blur-3xl float-anim" style={{ animationDelay: "2s" }}></div>
 
-          <div className="relative z-10 max-w-container-max mx-auto px-margin-desktop w-full py-16 flex flex-col items-center text-center">
+          {/* Text and CTAs Container */}
+          <div className="relative z-10 max-w-container-max mx-auto px-margin-desktop w-full flex flex-col items-center text-center">
             {/* Dynamic Rotating Title */}
-            <h1 className="font-serif text-5xl md:text-7xl font-bold tracking-tight text-on-surface leading-[1.15] mb-8 stagger-in max-w-4xl">
-               Photo Sharing App <br />
-              for <br />
+            <h1 className="font-serif text-5xl md:text-7xl font-bold tracking-tight text-on-surface leading-[1.15] mb-6 stagger-in max-w-4xl">
+              Your Event Photos, <br />
+              Delivered Instantly for <br />
               <span key={wordIndex} className="animate-fade-up-word inline-block bg-gradient-to-r from-primary via-primary-container to-secondary bg-clip-text text-transparent italic px-2">
                 {slideWords[wordIndex]}
               </span>
             </h1>
 
-            {/* Centered Features Tagline */}
-            <p className="font-sans text-sm md:text-base text-on-surface-variant mb-12 stagger-in max-w-2xl leading-relaxed tracking-wide">
-              Camera2Cloud &bull; AI Photo-editing &bull; Media Asset Management &bull; Portfolio Galleries
+            {/* Centered Tagline */}
+            <p className="font-sans text-base md:text-lg text-on-surface-variant mb-10 stagger-in max-w-2xl leading-relaxed">
+              Connect standard cameras directly to your guests&apos; phones. No app downloads, no logins. Just scan a custom QR code, match with a selfie, and instantly get your private high-res memories.
             </p>
 
-            {/* Vertical CTA Buttons */}
-            <div className="stagger-in flex flex-col items-center gap-4 w-full max-w-xs">
+            {/* CTA Buttons */}
+            <div className="stagger-in flex flex-col sm:flex-row items-center gap-4 w-full justify-center max-w-md">
               <Link
                 href="/inquire"
-                className="w-full bg-primary text-on-primary font-sans font-semibold text-sm py-4 rounded-xl hover:scale-[1.03] active:scale-95 duration-200 soft-lift transition-all text-center inline-block"
+                className="w-full sm:w-auto bg-primary text-on-primary font-sans font-semibold text-sm px-8 py-4 rounded-full hover:scale-[1.03] active:scale-95 duration-200 shadow-md transition-all text-center inline-block"
               >
-                Book a Demo
+                Create Event
               </Link>
               <Link
-                href="/login"
-                className="w-full bg-surface-container-lowest border border-outline-variant/30 text-primary font-sans font-semibold text-sm py-4 rounded-xl hover:bg-surface-container-low active:scale-95 transition-all text-center inline-block"
+                href="/inquire"
+                className="w-full sm:w-auto bg-surface-container-lowest border border-outline-variant/30 text-primary font-sans font-semibold text-sm px-8 py-4 rounded-full hover:bg-surface-container-low active:scale-95 transition-all text-center inline-block"
               >
-                Business Login
+                Book a Demo
               </Link>
             </div>
           </div>
         </section>
 
-        {/* How Spotme Works Section */}
-        <section className="py-24 bg-gradient-to-b from-background via-surface-container-low to-background overflow-hidden reveal transition-all duration-1000 ease-out border-b border-outline-variant/10 relative">
+        {/* How Spotme Works (Explained by Cats 🐱) */}
+        <section className="py-24 bg-gradient-to-b from-background via-surface-container-low to-background overflow-hidden border-b border-outline-variant/10 relative">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/3 rounded-full blur-3xl pointer-events-none"></div>
           
           <div className="max-w-container-max mx-auto px-margin-desktop relative z-10">
@@ -109,71 +116,120 @@ export default function Home() {
                 Memories, Delivered Instantly
               </h2>
               <p className="font-sans text-base md:text-lg text-on-surface-variant max-w-2xl mx-auto leading-relaxed">
-                We connect the photographer&apos;s camera to your guests&apos; phones in real-time, removing all manual effort.
+                We connect the photographer&apos;s camera to your guests&apos; phones in real-time. Here&apos;s the flow, explained by our friendly felines.
               </p>
             </div>
 
-            <div className="relative grid grid-cols-1 md:grid-cols-3 gap-8 md:gap-12">
-              {/* Connector lines for desktop layout */}
-              <div className="hidden md:block absolute top-12 left-[20%] right-[20%] h-[2px] bg-gradient-to-r from-primary-container/20 via-primary-container to-primary-container/20 pointer-events-none z-0"></div>
-
-              {/* Step 1 */}
-              <div className="flex flex-col items-center text-center group relative z-10">
-                <div className="relative mb-8">
-                  {/* Step number badge with glassmorphism */}
-                  <span className="absolute -top-3 -right-3 w-8 h-8 rounded-full glass font-sans text-xs font-bold flex items-center justify-center text-primary shadow-sm">
+            <div className="flex flex-col gap-24 md:gap-32">
+              {/* Step 1: Cat Cameraman */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center reveal transition-all duration-1000 ease-out">
+                {/* Image (Shown on top on mobile, blends organically with no box border) */}
+                <div className="relative group flex justify-center">
+                  <div className="absolute -inset-4 bg-primary/5 rounded-[32px] blur-2xl opacity-0 group-hover:opacity-100 transition-all duration-500"></div>
+                  <div className="relative hover:scale-105 transition-transform duration-500 max-w-[320px] md:max-w-[380px]">
+                    <Image
+                      src={catCameraManPointing}
+                      alt="Cat cameraman pointing at the text"
+                      className="w-full h-auto object-contain"
+                    />
+                  </div>
+                </div>
+                {/* Text */}
+                <div className="flex flex-col justify-center text-left">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center mb-6 text-lg border border-primary/20">
                     01
-                  </span>
-                  {/* Icon container */}
-                  <div className="w-24 h-24 rounded-[28px] bg-surface-container-lowest border border-outline-variant/20 shadow-md flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/30 transition-all duration-300 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <span className="material-symbols-outlined text-4xl relative z-10">photo_camera</span>
                   </div>
+                  <h3 className="font-serif text-3xl font-bold text-on-surface mb-4">
+                    1. Shoot &amp; Sync
+                  </h3>
+                  <p className="font-sans text-base text-on-surface-variant leading-relaxed mb-6">
+                    Our professional feline photographer snaps candid shots during your event. The moment a photo is captured, it is instantly uploaded to our secure cloud via real-time backdrop sync.
+                  </p>
+                  <ul className="space-y-3 font-sans text-sm text-on-surface-variant/80">
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                      Instant camera-to-cloud upload
+                    </li>
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                      No manual memory card transfers
+                    </li>
+                  </ul>
                 </div>
-                <h3 className="font-serif text-2xl font-bold text-on-surface mb-3 group-hover:text-primary transition-colors duration-300">
-                  Shoot &amp; Sync
-                </h3>
-                <p className="font-sans text-sm text-on-surface-variant max-w-xs leading-relaxed">
-                  Photographers capture the event using their standard cameras. Every shot is uploaded to the cloud instantly via our real-time backdrop sync.
-                </p>
               </div>
 
-              {/* Step 2 */}
-              <div className="flex flex-col items-center text-center group relative z-10">
-                <div className="relative mb-8">
-                  <span className="absolute -top-3 -right-3 w-8 h-8 rounded-full glass font-sans text-xs font-bold flex items-center justify-center text-primary shadow-sm">
+              {/* Step 2: Holding Phone */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center reveal transition-all duration-1000 ease-out">
+                {/* Image (First in DOM so it shows first on mobile, md:order-2 shifts it to the right on desktop) */}
+                <div className="relative group flex justify-center md:order-2">
+                  <div className="absolute -inset-4 bg-secondary/5 rounded-[32px] blur-2xl opacity-0 group-hover:opacity-100 transition-all duration-500"></div>
+                  <div className="relative hover:scale-105 transition-transform duration-500 max-w-[280px] md:max-w-[320px]">
+                    <Image
+                      src={holdingPhone}
+                      alt="Cat holding phone showing QR scanner"
+                      className="w-full h-auto object-contain"
+                    />
+                  </div>
+                </div>
+                {/* Text (Second in DOM, but md:order-1 shifts it to the left on desktop) */}
+                <div className="flex flex-col justify-center text-left md:order-1">
+                  <div className="w-12 h-12 rounded-full bg-secondary/10 text-secondary font-bold flex items-center justify-center mb-6 text-lg border border-secondary/20">
                     02
-                  </span>
-                  <div className="w-24 h-24 rounded-[28px] bg-surface-container-lowest border border-outline-variant/20 shadow-md flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/30 transition-all duration-300 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <span className="material-symbols-outlined text-4xl relative z-10">qr_code_scanner</span>
                   </div>
+                  <h3 className="font-serif text-3xl font-bold text-on-surface mb-4">
+                    2. Frictionless QR Scan
+                  </h3>
+                  <p className="font-sans text-base text-on-surface-variant leading-relaxed mb-6">
+                    Guests scan a custom event QR code displayed at the venue. There are no heavy apps to download, no app stores to visit, and absolutely no passwords to remember. Access is instant.
+                  </p>
+                  <ul className="space-y-3 font-sans text-sm text-on-surface-variant/80">
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-secondary text-lg">check_circle</span>
+                      Works on any smartphone browser
+                    </li>
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-secondary text-lg">check_circle</span>
+                      Safe, secure, and private access
+                    </li>
+                  </ul>
                 </div>
-                <h3 className="font-serif text-2xl font-bold text-on-surface mb-3 group-hover:text-primary transition-colors duration-300">
-                  Frictionless Scan
-                </h3>
-                <p className="font-sans text-sm text-on-surface-variant max-w-xs leading-relaxed">
-                  Guests scan the event&apos;s custom QR code to open the gallery. No app downloads, account creation, or logins are required.
-                </p>
               </div>
 
-              {/* Step 3 */}
-              <div className="flex flex-col items-center text-center group relative z-10">
-                <div className="relative mb-8">
-                  <span className="absolute -top-3 -right-3 w-8 h-8 rounded-full glass font-sans text-xs font-bold flex items-center justify-center text-primary shadow-sm">
-                    03
-                  </span>
-                  <div className="w-24 h-24 rounded-[28px] bg-surface-container-lowest border border-outline-variant/20 shadow-md flex items-center justify-center text-primary group-hover:scale-110 group-hover:border-primary/30 transition-all duration-300 relative overflow-hidden">
-                    <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                    <span className="material-symbols-outlined text-4xl relative z-10">face_retouching_natural</span>
+              {/* Step 3: Showcasing Private Photos */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-12 items-center reveal transition-all duration-1000 ease-out">
+                {/* Image */}
+                <div className="relative group flex justify-center">
+                  <div className="absolute -inset-4 bg-tertiary/5 rounded-[32px] blur-2xl opacity-0 group-hover:opacity-100 transition-all duration-500"></div>
+                  <div className="relative hover:scale-105 transition-transform duration-500 max-w-[320px] md:max-w-[380px]">
+                    <Image
+                      src={showcasingPrivatePhotos}
+                      alt="Cat showcasing private photos in first-person POV"
+                      className="w-full h-auto object-contain"
+                    />
                   </div>
                 </div>
-                <h3 className="font-serif text-2xl font-bold text-on-surface mb-3 group-hover:text-primary transition-colors duration-300">
-                  Personal AI Gallery
-                </h3>
-                <p className="font-sans text-sm text-on-surface-variant max-w-xs leading-relaxed">
-                  A quick secure selfie matches their face to the photo pool. Guests instantly get their own private, curated high-res gallery.
-                </p>
+                {/* Text */}
+                <div className="flex flex-col justify-center text-left">
+                  <div className="w-12 h-12 rounded-full bg-primary/10 text-primary font-bold flex items-center justify-center mb-6 text-lg border border-primary/20">
+                    03
+                  </div>
+                  <h3 className="font-serif text-3xl font-bold text-on-surface mb-4">
+                    3. Personal AI Gallery
+                  </h3>
+                  <p className="font-sans text-base text-on-surface-variant leading-relaxed mb-6">
+                    Take a quick secure selfie, and our AI scans the event&apos;s photo pool. Within seconds, guests get their own private, curated gallery of photos they appear in, ready to download and share in first-person POV!
+                  </p>
+                  <ul className="space-y-3 font-sans text-sm text-on-surface-variant/80">
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                      Facial recognition matching in seconds
+                    </li>
+                    <li className="flex items-center gap-3">
+                      <span className="material-symbols-outlined text-primary text-lg">check_circle</span>
+                      Download high-resolution print files
+                    </li>
+                  </ul>
+                </div>
               </div>
             </div>
           </div>
@@ -336,3 +392,5 @@ export default function Home() {
     </div>
   );
 }
+
+
