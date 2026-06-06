@@ -32,6 +32,16 @@ function MiniStat({
   );
 }
 
+/* ── formatBytes Utility ─────────────────────────── */
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return "0 Bytes";
+  const k = 1024;
+  const sizes = ["Bytes", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+};
+
+
 /* ═══════════════════════════════════════════════════
    Event Overview Panel
    ═══════════════════════════════════════════════════ */
@@ -84,13 +94,7 @@ export function EventOverviewPanel({
   };
 
 
-  const formatBytes = (bytes: number) => {
-    if (bytes === 0) return "0 Bytes";
-    const k = 1024;
-    const sizes = ["Bytes", "KB", "MB", "GB"];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
-  };
+
 
   const totalSizeBytes = localPhotos.reduce((acc, p) => acc + (p.file_size_bytes ?? 0), 0);
   const totalSizeFormatted = formatBytes(totalSizeBytes);
@@ -104,24 +108,13 @@ export function EventOverviewPanel({
     if (!confirm("Are you sure you want to permanently delete this photo?")) return;
     setDeleteLoading(true);
     try {
-      const supabase = createClient();
-      const { error: storageError } = await supabase.storage
-        .from("event-photos")
-        .remove([photo.storage_path]);
-        
-      if (storageError) {
-        console.error("Storage delete warning:", storageError.message);
+      const res = await fetch(`/api/photos?id=${photo.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete photo");
       }
-      
-      const { error: dbError } = await (supabase as any)
-        .from("event_photos")
-        .delete()
-        .eq("id", photo.id);
-        
-      if (dbError) {
-        throw new Error(dbError.message);
-      }
-      
       setLocalPhotos((prev) => prev.filter((p) => p.id !== photo.id));
       setSelectedPhoto(null);
       router.refresh();
@@ -448,109 +441,185 @@ export function EventOverviewPanel({
 /* ═══════════════════════════════════════════════════
    Uploads Panel — Real file upload to Supabase Storage
    ═══════════════════════════════════════════════════ */
+/* ── Persistent Upload Store ────────────────────── */
+interface PersistentQueueItem {
+  id: string;
+  file: File;
+  name: string;
+  progress: number;
+  state: "Pending" | "Uploading" | "Processed" | "Paused" | "Error";
+}
+
+interface UploadStore {
+  queue: PersistentQueueItem[];
+  isPaused: boolean;
+  isUploading: boolean;
+  listeners: Set<() => void>;
+  isUploadingWorkerRunning: boolean;
+}
+
+const globalUploadStores: Record<string, UploadStore> = {};
+
+function getUploadStore(eventId: string): UploadStore {
+  if (!globalUploadStores[eventId]) {
+    globalUploadStores[eventId] = {
+      queue: [],
+      isPaused: false,
+      isUploading: false,
+      listeners: new Set(),
+      isUploadingWorkerRunning: false,
+    };
+  }
+  return globalUploadStores[eventId];
+}
+
+function updateStore(eventId: string, updates: Partial<Omit<UploadStore, "listeners" | "isUploadingWorkerRunning">>) {
+  const store = getUploadStore(eventId);
+  Object.assign(store, updates);
+  store.listeners.forEach((listener) => listener());
+}
+
+async function runUploadWorker(eventId: string, routerRefresh: () => void) {
+  const store = getUploadStore(eventId);
+  if (store.isUploadingWorkerRunning) return;
+  store.isUploadingWorkerRunning = true;
+  updateStore(eventId, { isUploading: true });
+
+  const supabase = createClient();
+
+  while (true) {
+    if (store.isPaused) {
+      break;
+    }
+
+    const nextItem = store.queue.find((item) => item.state === "Pending");
+    if (!nextItem) {
+      break;
+    }
+
+    // Mark current item as Uploading
+    store.queue = store.queue.map((item) =>
+      item.id === nextItem.id ? { ...item, state: "Uploading" as const, progress: 0 } : item
+    );
+    updateStore(eventId, { queue: store.queue });
+
+    const file = nextItem.file;
+    const ext = file.name.split(".").pop() ?? "jpg";
+    const storagePath = `${eventId}/${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
+
+    let prog = 0;
+    const interval = setInterval(() => {
+      prog = Math.min(prog + 15, 90);
+      store.queue = store.queue.map((item) =>
+        item.id === nextItem.id ? { ...item, progress: prog } : item
+      );
+      updateStore(eventId, { queue: store.queue });
+    }, 150);
+
+    try {
+      const { error } = await supabase.storage
+        .from("event-photos")
+        .upload(storagePath, file, { upsert: true });
+
+      clearInterval(interval);
+
+      if (error) {
+        store.queue = store.queue.map((item) =>
+          item.id === nextItem.id ? { ...item, progress: 100, state: "Error" as const } : item
+        );
+        updateStore(eventId, { queue: store.queue });
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage.from("event-photos").getPublicUrl(storagePath);
+      const res = await fetch("/api/photos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          event_id: eventId,
+          storage_path: storagePath,
+          public_url: urlData.publicUrl,
+          original_filename: file.name,
+          file_size_bytes: file.size,
+          mime_type: file.type,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to insert photo record");
+      }
+
+      store.queue = store.queue.map((item) =>
+        item.id === nextItem.id ? { ...item, progress: 100, state: "Processed" as const } : item
+      );
+      updateStore(eventId, { queue: store.queue });
+    } catch (err) {
+      clearInterval(interval);
+      console.error("Upload error:", err);
+      store.queue = store.queue.map((item) =>
+        item.id === nextItem.id ? { ...item, progress: 100, state: "Error" as const } : item
+      );
+      updateStore(eventId, { queue: store.queue });
+    }
+  }
+
+  store.isUploadingWorkerRunning = false;
+  updateStore(eventId, { isUploading: false });
+  routerRefresh();
+}
+
 export function UploadsPanel({ event, photos }: { event: EventRecord; photos: EventPhoto[] }) {
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  interface QueueItem {
-    id: string;
-    file: File;
-    name: string;
-    progress: number;
-    state: "Pending" | "Uploading" | "Processed" | "Paused" | "Error";
-  }
 
-  const [uploadQueue, setUploadQueue] = useState<QueueItem[]>([]);
-  const [isPaused, setIsPaused] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
+  const store = getUploadStore(event.id);
+  const [uploadQueue, setUploadQueue] = useState<PersistentQueueItem[]>(store.queue);
+  const [isPaused, setIsPaused] = useState(store.isPaused);
+  const [isUploading, setIsUploading] = useState(store.isUploading);
   const [isDragging, setIsDragging] = useState(false);
 
-  const isPausedRef = useRef(false);
-  const isUploadingRef = useRef(false);
-  const queueRef = useRef<QueueItem[]>([]);
+  const [selectedPhoto, setSelectedPhoto] = useState<EventPhoto | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [localPhotos, setLocalPhotos] = useState<EventPhoto[]>(photos);
 
-  // Keep queueRef in sync with uploadQueue for the worker
   useEffect(() => {
-    queueRef.current = uploadQueue;
-  }, [uploadQueue]);
+    setLocalPhotos(photos);
+  }, [photos]);
 
-  const updateQueueItem = (id: string, updates: Partial<QueueItem>) => {
-    queueRef.current = queueRef.current.map((item) =>
-      item.id === id ? { ...item, ...updates } : item
-    );
-    setUploadQueue([...queueRef.current]);
-  };
+  useEffect(() => {
+    const handleStoreChange = () => {
+      setUploadQueue(store.queue);
+      setIsPaused(store.isPaused);
+      setIsUploading(store.isUploading);
+    };
 
-  const processQueue = async () => {
-    if (isUploadingRef.current) return;
-    isUploadingRef.current = true;
-    setIsUploading(true);
+    store.listeners.add(handleStoreChange);
+    handleStoreChange(); // Sync initial values on mount
 
-    const supabase = createClient();
+    return () => {
+      store.listeners.delete(handleStoreChange);
+    };
+  }, [store]);
 
-    while (true) {
-      if (isPausedRef.current) {
-        break;
+  const handleDeletePhoto = async (photo: EventPhoto) => {
+    if (!confirm("Are you sure you want to permanently delete this photo?")) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/photos?id=${photo.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete photo");
       }
-
-      const nextItem = queueRef.current.find((item) => item.state === "Pending");
-      if (!nextItem) {
-        break;
-      }
-
-      updateQueueItem(nextItem.id, { state: "Uploading", progress: 0 });
-
-      const file = nextItem.file;
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const storagePath = `${event.id}/${Date.now()}-${Math.random().toString(36).substring(2, 7)}.${ext}`;
-
-      let prog = 0;
-      const interval = setInterval(() => {
-        prog = Math.min(prog + 15, 90);
-        updateQueueItem(nextItem.id, { progress: prog });
-      }, 150);
-
-      try {
-        const { error } = await supabase.storage
-          .from("event-photos")
-          .upload(storagePath, file, { upsert: true });
-
-        clearInterval(interval);
-
-        if (error) {
-          updateQueueItem(nextItem.id, { progress: 100, state: "Error" });
-          continue;
-        }
-
-        const { data: urlData } = supabase.storage.from("event-photos").getPublicUrl(storagePath);
-        const res = await fetch("/api/photos", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            event_id: event.id,
-            storage_path: storagePath,
-            public_url: urlData.publicUrl,
-            original_filename: file.name,
-            file_size_bytes: file.size,
-            mime_type: file.type,
-          }),
-        });
-
-        if (!res.ok) {
-          throw new Error("Failed to insert photo record");
-        }
-
-        updateQueueItem(nextItem.id, { progress: 100, state: "Processed" });
-      } catch (err) {
-        clearInterval(interval);
-        console.error("Upload error:", err);
-        updateQueueItem(nextItem.id, { progress: 100, state: "Error" });
-      }
+      setLocalPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      setSelectedPhoto(null);
+      router.refresh();
+    } catch (err: any) {
+      alert("Failed to delete photo: " + err.message);
+    } finally {
+      setDeleteLoading(false);
     }
-
-    isUploadingRef.current = false;
-    setIsUploading(false);
-    router.refresh();
   };
 
   const uploadFiles = (files: FileList) => {
@@ -564,39 +633,32 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
       state: "Pending" as const,
     }));
 
-    queueRef.current = [...queueRef.current, ...queueEntries];
-    setUploadQueue([...queueRef.current]);
+    const nextQueue = [...store.queue, ...queueEntries];
+    updateStore(event.id, { queue: nextQueue });
 
-    processQueue();
+    runUploadWorker(event.id, () => router.refresh());
   };
 
   const handlePause = () => {
-    isPausedRef.current = true;
-    setIsPaused(true);
-    queueRef.current = queueRef.current.map((item) =>
+    const nextQueue = store.queue.map((item) =>
       item.state === "Pending" ? { ...item, state: "Paused" as const } : item
     );
-    setUploadQueue([...queueRef.current]);
+    updateStore(event.id, { isPaused: true, queue: nextQueue });
   };
 
   const handleResume = () => {
-    isPausedRef.current = false;
-    setIsPaused(false);
-    queueRef.current = queueRef.current.map((item) =>
+    const nextQueue = store.queue.map((item) =>
       item.state === "Paused" ? { ...item, state: "Pending" as const } : item
     );
-    setUploadQueue([...queueRef.current]);
-    processQueue();
+    updateStore(event.id, { isPaused: false, queue: nextQueue });
+    runUploadWorker(event.id, () => router.refresh());
   };
 
   const handleCancel = () => {
-    isPausedRef.current = true;
-    setIsPaused(false);
-    queueRef.current = queueRef.current.filter(
+    const nextQueue = store.queue.filter(
       (item) => item.state === "Processed" || item.state === "Error"
     );
-    setUploadQueue([...queueRef.current]);
-    isPausedRef.current = false;
+    updateStore(event.id, { queue: nextQueue, isPaused: false });
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -777,9 +839,9 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
       <section className="rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 p-5 backdrop-blur-xl xl:col-span-2 sm:p-6">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-semibold tracking-[-0.04em] sm:text-lg">
-            Event photos <span className="ml-2 text-sm font-normal text-[#827970]">({photos.length} total)</span>
+            Event photos <span className="ml-2 text-sm font-normal text-[#827970]">({localPhotos.length} total)</span>
           </h2>
-          {photos.length > 0 && (
+          {localPhotos.length > 0 && (
             <Link
               href={`/dashboard/events/${event.id}/gallery`}
               className="flex items-center gap-1 text-xs font-semibold text-[#D67D5C] hover:text-[#C46A4A] transition"
@@ -789,12 +851,16 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
             </Link>
           )}
         </div>
-        {photos.length === 0 ? (
+        {localPhotos.length === 0 ? (
           <p className="mt-4 text-sm text-[#827970]">No photos uploaded yet. Drop files above to get started.</p>
         ) : (
           <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4 sm:mt-5 sm:gap-4">
-            {photos.slice(0, 8).map((photo) => (
-              <div key={photo.id} className="group relative h-32 overflow-hidden rounded-2xl sm:h-40">
+            {localPhotos.slice(0, 8).map((photo) => (
+              <div
+                key={photo.id}
+                onClick={() => setSelectedPhoto(photo)}
+                className={`group relative h-32 cursor-pointer overflow-hidden rounded-2xl sm:h-40 border border-[#2D2D2D]/5 transition-all hover:-translate-y-0.5 hover:shadow-md ${selectedPhoto?.id === photo.id ? "ring-2 ring-[#D67D5C]" : ""}`}
+              >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
                   style={{ backgroundImage: `url("${photo.public_url}")` }}
@@ -805,6 +871,101 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
           </div>
         )}
       </section>
+
+      {/* File Detail Sidebar (Slide-out panel) */}
+      {selectedPhoto && (
+        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm border-l border-[#2D2D2D]/8 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl flex-col animate-slide-in">
+          <div className="flex items-center justify-between border-b border-[#2D2D2D]/5 pb-4">
+            <h3 className="text-sm font-semibold text-[#2D2D2D] flex items-center gap-1.5 font-sans">
+              <span className="material-symbols-outlined text-[18px]">info</span>
+              File Details
+            </h3>
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#FDF8F1] text-[#625D58] border border-[#2D2D2D]/5 transition"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+
+          <div className="mt-6 flex-1 overflow-y-auto space-y-5 pr-1 font-sans">
+            {/* Image Preview */}
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPhoto.public_url || ""}
+                alt={selectedPhoto.original_filename || "Preview"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+
+            {/* Properties List */}
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">File name</p>
+                <p className="mt-1 font-medium text-[#2D2D2D] break-all">{selectedPhoto.original_filename}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Size</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{formatBytes(selectedPhoto.file_size_bytes ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Mime type</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{selectedPhoto.mime_type || "image/jpeg"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Uploaded</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">
+                  {new Date(selectedPhoto.uploaded_at).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Storage Path</p>
+                <p className="mt-1 text-[11px] font-mono text-[#827970] break-all">{selectedPhoto.storage_path}</p>
+              </div>
+            </div>
+
+            {/* Face matching metadata */}
+            <div className="rounded-xl bg-gradient-to-br from-[#FDF8F1] to-[#FFF6F1] p-4 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-[#B36144]">
+                <span className="material-symbols-outlined text-[16px]">face</span>
+                AI Face Matching Status
+              </div>
+              <p className="mt-1.5 text-[#827970] leading-relaxed">
+                This image has been indexed and is ready for facial recognition. Guests scanning the event QR can match and receive it instantly on WhatsApp.
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-6 flex gap-2 border-t border-[#2D2D2D]/5 pt-4 font-sans">
+            <a
+              href={selectedPhoto.public_url || ""}
+              download={selectedPhoto.original_filename || "download"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center rounded-xl border border-[#DED5CC] py-3 text-xs font-semibold text-[#625D58] hover:bg-[#FDF8F1] active:scale-[0.98] transition flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              Download
+            </a>
+            <button
+              onClick={() => handleDeletePhoto(selectedPhoto)}
+              disabled={deleteLoading}
+              className="flex-1 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 py-3 text-xs font-semibold text-red-600 active:scale-[0.98] transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {deleteLoading ? (
+                <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  Delete
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1016,15 +1177,40 @@ export function QrPanel({ event, guestCount }: { event: EventRecord; guestCount:
    Gallery Panel — Real photos from Supabase Storage
    ═══════════════════════════════════════════════════ */
 export function GalleryPanel({ eventId, photos }: { eventId: string; photos: EventPhoto[] }) {
+  const router = useRouter();
   const [search, setSearch] = useState("");
   const [localPhotos, setLocalPhotos] = useState<EventPhoto[]>(photos);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(photos.length === 10000);
 
+  const [selectedPhoto, setSelectedPhoto] = useState<EventPhoto | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+
   useEffect(() => {
     setLocalPhotos(photos);
     setHasMore(photos.length === 10000);
   }, [photos]);
+
+  const handleDeletePhoto = async (photo: EventPhoto) => {
+    if (!confirm("Are you sure you want to permanently delete this photo?")) return;
+    setDeleteLoading(true);
+    try {
+      const res = await fetch(`/api/photos?id=${photo.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "Failed to delete photo");
+      }
+      setLocalPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+      setSelectedPhoto(null);
+      router.refresh();
+    } catch (err: any) {
+      alert("Failed to delete photo: " + err.message);
+    } finally {
+      setDeleteLoading(false);
+    }
+  };
 
   const handleLoadMore = async () => {
     setLoadingMore(true);
@@ -1085,7 +1271,8 @@ export function GalleryPanel({ eventId, photos }: { eventId: string; photos: Eve
             {filteredPhotos.map((photo, index) => (
               <article
                 key={photo.id}
-                className={`group relative mb-3 overflow-hidden rounded-2xl sm:mb-4 ${index % 3 === 0 ? "h-[260px] sm:h-[330px]" : "h-[190px] sm:h-[235px]"}`}
+                onClick={() => setSelectedPhoto(photo)}
+                className={`group relative mb-3 overflow-hidden rounded-2xl sm:mb-4 cursor-pointer hover:shadow-lg transition-all ${selectedPhoto?.id === photo.id ? "ring-2 ring-[#D67D5C]" : ""} ${index % 3 === 0 ? "h-[260px] sm:h-[330px]" : "h-[190px] sm:h-[235px]"}`}
               >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
@@ -1116,6 +1303,101 @@ export function GalleryPanel({ eventId, photos }: { eventId: string; photos: Eve
             </div>
           )}
         </>
+      )}
+
+      {/* File Detail Sidebar (Slide-out panel) */}
+      {selectedPhoto && (
+        <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm border-l border-[#2D2D2D]/8 bg-white/95 p-6 shadow-2xl backdrop-blur-2xl flex-col animate-slide-in">
+          <div className="flex items-center justify-between border-b border-[#2D2D2D]/5 pb-4">
+            <h3 className="text-sm font-semibold text-[#2D2D2D] flex items-center gap-1.5 font-sans">
+              <span className="material-symbols-outlined text-[18px]">info</span>
+              File Details
+            </h3>
+            <button
+              onClick={() => setSelectedPhoto(null)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg hover:bg-[#FDF8F1] text-[#625D58] border border-[#2D2D2D]/5 transition"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+
+          <div className="mt-6 flex-1 overflow-y-auto space-y-5 pr-1 font-sans">
+            {/* Image Preview */}
+            <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={selectedPhoto.public_url || ""}
+                alt={selectedPhoto.original_filename || "Preview"}
+                className="h-full w-full object-cover"
+              />
+            </div>
+
+            {/* Properties List */}
+            <div className="space-y-3.5 text-xs">
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">File name</p>
+                <p className="mt-1 font-medium text-[#2D2D2D] break-all">{selectedPhoto.original_filename}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Size</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{formatBytes(selectedPhoto.file_size_bytes ?? 0)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Mime type</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">{selectedPhoto.mime_type || "image/jpeg"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Uploaded</p>
+                <p className="mt-1 font-medium text-[#2D2D2D]">
+                  {new Date(selectedPhoto.uploaded_at).toLocaleString("en-US", { month: "long", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                </p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-semibold text-[#9A9087]">Storage Path</p>
+                <p className="mt-1 text-[11px] font-mono text-[#827970] break-all">{selectedPhoto.storage_path}</p>
+              </div>
+            </div>
+
+            {/* Face matching metadata */}
+            <div className="rounded-xl bg-gradient-to-br from-[#FDF8F1] to-[#FFF6F1] p-4 text-xs">
+              <div className="flex items-center gap-2 font-semibold text-[#B36144]">
+                <span className="material-symbols-outlined text-[16px]">face</span>
+                AI Face Matching Status
+              </div>
+              <p className="mt-1.5 text-[#827970] leading-relaxed">
+                This image has been indexed and is ready for facial recognition. Guests scanning the event QR can match and receive it instantly on WhatsApp.
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons */}
+          <div className="mt-6 flex gap-2 border-t border-[#2D2D2D]/5 pt-4 font-sans">
+            <a
+              href={selectedPhoto.public_url || ""}
+              download={selectedPhoto.original_filename || "download"}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex-1 text-center rounded-xl border border-[#DED5CC] py-3 text-xs font-semibold text-[#625D58] hover:bg-[#FDF8F1] active:scale-[0.98] transition flex items-center justify-center gap-1.5"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              Download
+            </a>
+            <button
+              onClick={() => handleDeletePhoto(selectedPhoto)}
+              disabled={deleteLoading}
+              className="flex-1 rounded-xl bg-red-50 hover:bg-red-100 border border-red-200 py-3 text-xs font-semibold text-red-600 active:scale-[0.98] transition flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {deleteLoading ? (
+                <span className="material-symbols-outlined text-[16px] animate-spin">sync</span>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[16px]">delete</span>
+                  Delete
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );
