@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hasEventSession } from "@/lib/guest-session";
+import { hasGuestSessionFor } from "@/lib/guest-session";
 import { checkCsrf, checkBodySize } from "@/lib/api-guard";
 
 /**
@@ -39,8 +39,8 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // Verify guest session cookie for this event
-  const isAuthorized = await hasEventSession(event_id);
+  // Verify this browser is bound to the requested guest for this event.
+  const isAuthorized = await hasGuestSessionFor(event_id, guest_id);
   if (!isAuthorized) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -91,6 +91,5 @@ export async function POST(req: NextRequest) {
   }
   // ─────────────────────────────────────────────────────────────────────────
 
-  // Background worker in ai-service will pick up the 'uploaded' status selfie.
-  return NextResponse.json({ status: "processing" });
+  return NextResponse.json({ status: "queued" });
 }

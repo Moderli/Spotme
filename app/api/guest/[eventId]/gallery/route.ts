@@ -34,6 +34,7 @@ export async function GET(
   try {
     // 2. Fetch event details using the service-role client
     const adminClient = getAdminClient();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: eventData, error: eventError } = await (adminClient as any)
       .from("events")
       .select("status, qr_active, privacy_mode")

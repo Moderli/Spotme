@@ -35,9 +35,9 @@ export async function POST(req: NextRequest) {
   }
 
   // Verify the user owns this event or is a collaborator
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let hasAccess = false;
   
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: ownedEvent } = await (supabase as any)
     .from("events")
     .select("id")
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
   if (ownedEvent) {
     hasAccess = true;
   } else {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data: collab } = await (supabase as any)
       .from("event_collaborators")
       .select("id")
@@ -108,6 +109,7 @@ export async function DELETE(req: NextRequest) {
   }
 
   // Ensure current user is the owner of the event
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const eventOwnerId = (photo.events as any)?.owner_id;
   if (eventOwnerId !== user.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 403 });

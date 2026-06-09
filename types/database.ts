@@ -22,9 +22,10 @@ export interface Profile {
   role: "admin" | "photographer";
   phone: string | null;
   bio: string | null;
-  plan: "free" | "pro" | "unlimited";
+  plan: "free" | "starter" | "pro" | "studio_basic" | "studio_pro" | "custom";
   max_events: number;
   max_storage_gb: number;
+  disabled_features: string[];
   created_at: string;
   updated_at: string;
 }
@@ -55,6 +56,9 @@ export interface EventPhoto {
   original_filename: string | null;
   file_size_bytes: number | null;
   mime_type: string | null;
+  thumb_url?: string | null;
+  medium_url?: string | null;
+  blur_hash?: string | null;
   uploaded_at: string;
 }
 
