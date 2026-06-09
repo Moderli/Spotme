@@ -7,6 +7,32 @@ import { validatePassword } from "@/lib/auth-validate";
 
 
 
+function formatRelativeTime(dateString?: string) {
+  if (!dateString) return "Last changed recently";
+  try {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    if (diffMs < 0) return "Last changed just now";
+
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+    if (diffMins < 1) return "Last changed just now";
+    if (diffMins < 60) return `Last changed ${diffMins} minute${diffMins > 1 ? "s" : ""} ago`;
+    if (diffHours < 24) return `Last changed ${diffHours} hour${diffHours > 1 ? "s" : ""} ago`;
+    if (diffDays < 30) return `Last changed ${diffDays} day${diffDays > 1 ? "s" : ""} ago`;
+
+    const diffMonths = Math.floor(diffDays / 30);
+    if (diffMonths < 12) return `Last changed ${diffMonths} month${diffMonths > 1 ? "s" : ""} ago`;
+
+    return `Last changed on ${date.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })}`;
+  } catch (err) {
+    return "Last changed recently";
+  }
+}
+
 function SectionTitle({ icon, title }: { icon: string; title: string }) {
   return (
     <div className="mb-5 flex items-center gap-2">
@@ -299,9 +325,11 @@ function ChangePlanModal({
 function ChangePasswordModal({
   isOpen,
   onClose,
+  onUpdated,
 }: {
   isOpen: boolean;
   onClose: () => void;
+  onUpdated?: () => void;
 }) {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -372,6 +400,7 @@ function ChangePasswordModal({
       setNewPassword("");
       setConfirmPassword("");
       setShowPassword(false);
+      if (onUpdated) onUpdated();
       onClose();
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to update password.";
@@ -485,6 +514,7 @@ export default function AccountPage() {
     plan: "free" | "pro" | "unlimited";
     phone: string | null;
     bio: string | null;
+    updated_at?: string;
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
@@ -510,6 +540,12 @@ export default function AccountPage() {
 
   useEffect(() => {
     loadProfile();
+    if (typeof window !== "undefined") {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.get("upgrade") === "true") {
+        setIsPlanOpen(true);
+      }
+    }
   }, []);
 
   const getPlanPriceLabel = (plan: string) => {
@@ -524,8 +560,12 @@ export default function AccountPage() {
     return "Studio Plan";
   };
 
+  const passwordDetail = profile?.updated_at 
+    ? formatRelativeTime(profile.updated_at)
+    : "Last changed recently";
+
   const securityRows = [
-    { label: "Change password", detail: "Last changed 3 months ago", icon: "lock", action: "Update" },
+    { label: "Change password", detail: passwordDetail, icon: "lock", action: "Update" },
   ];
 
   if (loading) {
@@ -672,6 +712,7 @@ export default function AccountPage() {
       <ChangePasswordModal
         isOpen={isPasswordOpen}
         onClose={() => setIsPasswordOpen(false)}
+        onUpdated={loadProfile}
       />
     </DashboardShell>
   );
