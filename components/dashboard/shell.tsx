@@ -6,6 +6,7 @@ import { type ReactNode, useState, useEffect, useCallback, useRef, Suspense } fr
 import type { Event as EventRecord } from "@/types/database";
 import { createClient } from "@/lib/supabase/client";
 import { PlanLimitModal } from "./plan-limit-modal";
+import { sanitizeText, containsDangerousInput } from "@/lib/auth-validate";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -711,6 +712,16 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [eventNameError, setEventNameError] = useState<string>("");
+
+  function validateEventName(value: string): string {
+    const trimmed = value.trim();
+    if (!trimmed) return "Event name is required.";
+    if (trimmed.length > 100) return "Event name must be 100 characters or fewer.";
+    if (/<[^>]*>/.test(trimmed)) return "Event name must not contain HTML tags.";
+    if (containsDangerousInput(trimmed)) return "Event name contains invalid characters or patterns.";
+    return "";
+  }
 
   const [checkingLimit, setCheckingLimit] = useState(false);
   const [isLimitReached, setIsLimitReached] = useState(false);
@@ -792,6 +803,7 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
       return () => clearTimeout(timer);
     } else {
       setIsLimitReached(false);
+      setEventNameError("");
     }
   }, [isOpen]);
 
@@ -881,12 +893,18 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const newErrors: typeof errors = {};
 
-    const trimmedName = formData.name.trim();
-    if (!trimmedName || trimmedName.length < 2) {
-      newErrors.name = "Please enter an event name.";
+    const nameError = validateEventName(formData.name);
+    if (nameError) {
+      setEventNameError(nameError);
+      if (nameRef.current) {
+        nameRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+        nameRef.current.focus();
+      }
+      return;
     }
+
+    const newErrors: typeof errors = {};
 
     const trimmedVenue = formData.venue.trim();
     if (!trimmedVenue || trimmedVenue.length < 2) {
@@ -973,11 +991,13 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
 
     // Insert event record
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const cleanEventName = sanitizeText(formData.name);
+
     const { data: newEvent, error: insertError } = await (supabase as any)
       .from("events")
       .insert({
         owner_id: user.id,
-        name: formData.name,
+        name: cleanEventName,
         venue: formData.venue || null,
         event_date: formData.date || null,
         event_type: formData.type,
@@ -999,6 +1019,7 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
 
     // Reset and close
     setFormData({ name: "", venue: "", date: "", type: "marriage", adminName: "", adminPhone: "", adminEmail: "" });
+    setEventNameError("");
     setCoverFile(null);
     setCoverPreview(null);
     setLoading(false);
@@ -1099,15 +1120,21 @@ export function CreateEventModal({ isOpen, onClose }: { isOpen: boolean; onClose
               <input
                 ref={nameRef}
                 required
-                maxLength={200}
+                maxLength={120}
                 minLength={2}
                 placeholder="e.g. Villa d'Este Celebration"
                 value={formData.name}
-                onChange={(e) => { setFormData({ ...formData, name: e.target.value }); clearError("name"); }}
+                onChange={(e) => {
+                  setFormData({ ...formData, name: e.target.value });
+                  setEventNameError(validateEventName(e.target.value));
+                }}
+                onBlur={(e) => {
+                  setEventNameError(validateEventName(e.target.value));
+                }}
                 className="mt-2 h-11 w-full rounded-xl border border-[#2D2D2D]/8 bg-white px-4 text-xs outline-none transition focus:border-[#D67D5C]/50 focus:shadow-[0_0_0_3px_rgba(214,125,92,0.08)]"
               />
-              {errors.name && (
-                <p className="mt-1 text-[10px] font-semibold text-red-600">{errors.name}</p>
+              {eventNameError && (
+                <p className="mt-1 text-[10px] font-semibold text-red-600">{eventNameError}</p>
               )}
             </div>
 
