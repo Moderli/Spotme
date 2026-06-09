@@ -14,6 +14,19 @@ const cleanName = (name?: string | null) => {
   return name.includes("@") ? name.split("@")[0] : name;
 };
 
+const getPlanName = (plan?: string) => {
+  if (!plan) return "Free Tier";
+  switch (plan.toLowerCase()) {
+    case "free": return "Free Plan";
+    case "starter": return "Starter Tier";
+    case "pro": return "Personal Pro";
+    case "studio_basic": return "Studio Basic";
+    case "studio_pro": return "Studio Pro";
+    case "custom": return "Custom Plan";
+    default: return `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan`;
+  }
+};
+
 function todayISODate() {
   const d = new Date();
   const y = d.getFullYear();
@@ -153,7 +166,7 @@ function ProfileBlock({ collapsed, userName }: { collapsed?: boolean; userName?:
                 {cleanName(userProfile?.fullName) || displayName || "User"}
               </p>
               <p className="text-[10px] text-white/50 flex items-center gap-1.5 mt-0.5 uppercase tracking-wider font-medium">
-                {userProfile?.plan === "unlimited" ? "Unlimited Plan" : userProfile?.plan === "pro" ? "Pro Member" : "Free Tier"}
+                {getPlanName(userProfile?.plan)}
               </p>
             </div>
             <span className="material-symbols-outlined text-[20px] text-white/40 transition-transform duration-300 group-hover:translate-y-0.5">unfold_more</span>
@@ -310,7 +323,7 @@ function NavbarProfile({ userName }: { userName?: string }) {
             </div>
             <div className="mt-2.5 flex items-center justify-between">
               <span className="inline-flex items-center gap-1 rounded-full bg-orange-50 border border-orange-100 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-orange-600">
-                {userProfile?.plan ? `${userProfile.plan.toUpperCase()} PLAN` : "FREE PLAN"}
+                {userProfile?.plan ? `${getPlanName(userProfile.plan).toUpperCase()}` : "FREE PLAN"}
               </span>
               <span className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
                 <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />

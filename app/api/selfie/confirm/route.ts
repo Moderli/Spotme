@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hasEventSession } from "@/lib/guest-session";
+import { hasGuestSessionFor } from "@/lib/guest-session";
 import { checkCsrf, checkBodySize } from "@/lib/api-guard";
 
 // ── F-17 Fix: Per-request factory — avoids silent env-var failures at module load
@@ -46,8 +46,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify guest session cookie for this event
-    const isAuthorized = await hasEventSession(eventId);
+    // Verify this browser is bound to the requested guest for this event.
+    const isAuthorized = await hasGuestSessionFor(eventId, guestId);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
@@ -79,6 +79,37 @@ export async function POST(req: NextRequest) {
     if (!guestRow) {
       return NextResponse.json(
         { error: "Guest not registered for this event." },
+        { status: 403 }
+      );
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
+    // ── Check if AI Face Matching is disabled globally or for this event owner ─────
+    const [eventRes, globalSettingsRes] = await Promise.all([
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (adminSupabase as any).from("events").select("owner_id").eq("id", eventId).single(),
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (adminSupabase as any).from("system_settings").select("value").eq("key", "disabled_features").maybeSingle()
+    ]);
+
+    const ownerId = eventRes.data?.owner_id;
+    if (!ownerId) {
+      return NextResponse.json({ error: "Event owner not found." }, { status: 404 });
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data: profileRes } = await (adminSupabase as any)
+      .from("profiles")
+      .select("disabled_features")
+      .eq("id", ownerId)
+      .single();
+
+    const globalDisabled = globalSettingsRes.data?.value || [];
+    const userDisabled = profileRes?.disabled_features || [];
+
+    if (globalDisabled.includes("face_matching") || userDisabled.includes("face_matching")) {
+      return NextResponse.json(
+        { error: "AI Face Matching feature is currently disabled by system administrator." },
         { status: 403 }
       );
     }

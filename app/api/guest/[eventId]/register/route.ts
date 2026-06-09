@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { signEventToken, verifyEventToken, SESSION_DURATION } from "@/lib/guest-session";
 import { checkCsrf, checkBodySize } from "@/lib/api-guard";
+import { verifyOtpCode } from "@/lib/twofactor";
 
 // ── F-17 Fix: Per-request factory instead of module-level singleton ───────────
 // Module-level instantiation silently swallows missing env vars at cold start.
@@ -56,7 +57,7 @@ export async function POST(
     if (eventError || !event) {
       return NextResponse.json({ error: "Invalid or inactive event" }, { status: 404 });
     }
-    const { phone: rawPhone, displayName: rawName } = await req.json();
+    const { phone: rawPhone, displayName: rawName, code, sessionId } = await req.json();
 
     // ── F-03: Validate and normalise phone number ──────────────────────────
     if (!rawPhone) {
@@ -85,6 +86,15 @@ export async function POST(
         { error: "displayName must not contain HTML tags" },
         { status: 400 }
       );
+    }
+
+    // ── OTP Verification ───────────────────────────────────────────────────
+    if (!code || !sessionId) {
+      return NextResponse.json({ error: "Verification code and session ID are required" }, { status: 400 });
+    }
+    const verifyResult = await verifyOtpCode(sessionId, code);
+    if (!verifyResult.success) {
+      return NextResponse.json({ error: verifyResult.error || "Invalid verification code" }, { status: 400 });
     }
 
     // 2. Check if guest already exists for this event + phone
@@ -123,17 +133,24 @@ export async function POST(
     const cookieStore = await cookies();
     const existingCookie = cookieStore.get("spotme_guest_session")?.value;
 
-    let payload = { access: {} as Record<string, number> };
+    let payload = {
+      access: {} as Record<string, number>,
+      guests: {} as Record<string, string>,
+    };
 
     if (existingCookie) {
       const verified = verifyEventToken(existingCookie);
       if (verified) {
-        payload = verified;
+        payload = {
+          access: verified.access,
+          guests: verified.guests ?? {},
+        };
       }
     }
 
     // Grant/refresh access for this specific eventId
     payload.access[eventId] = Date.now() + SESSION_DURATION;
+    payload.guests[eventId] = guestRecord.id;
 
     const token = signEventToken(payload);
 
@@ -141,7 +158,7 @@ export async function POST(
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 7 * 24 * 60 * 60, // 7 days in seconds
+      maxAge: 2 * 24 * 60 * 60, // 2 days in seconds
       path: "/",
     });
 

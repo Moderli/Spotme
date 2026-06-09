@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Event as EventRecord, EventPhoto, Guest } from "@/types/database";
 import { createClient } from "@/lib/supabase/client";
 import { useRouter } from "next/navigation";
+import { getOptimizedStorageUrl } from "@/lib/image-optimizer";
 import { PlanLimitModal } from "./plan-limit-modal";
 
 /* ── Reusable Mini Stat Card ────────────────────── */
@@ -74,6 +75,7 @@ export function EventOverviewPanel({
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [userPlan, setUserPlan] = useState<string>("free");
   const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+  const [disabledFeatures, setDisabledFeatures] = useState<string[]>([]);
 
   useEffect(() => {
     const getSession = async () => {
@@ -83,12 +85,22 @@ export function EventOverviewPanel({
       if (user) {
         const { data: profile } = await (supabase as any)
           .from("profiles")
-          .select("plan")
+          .select("plan, disabled_features")
           .eq("id", user.id)
           .single();
-        if ((profile as any)?.plan) {
-          setUserPlan((profile as any).plan);
+        if (profile) {
+          setUserPlan(profile.plan || "free");
         }
+
+        const { data: systemSettings } = await (supabase as any)
+          .from("system_settings")
+          .select("value")
+          .eq("key", "disabled_features")
+          .maybeSingle();
+
+        const userDisabled = profile?.disabled_features || [];
+        const globalDisabled = systemSettings?.value || [];
+        setDisabledFeatures([...new Set([...userDisabled, ...globalDisabled])]);
       }
     };
     getSession();
@@ -265,7 +277,7 @@ export function EventOverviewPanel({
       <div>
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-[#766D66]">Workspace Folders</h3>
-          {isOwner && !(userPlan === "free" || userPlan === "solo" || !userPlan) && (
+          {isOwner && !(userPlan === "free" || userPlan === "solo" || !userPlan) && !disabledFeatures.includes("collaborators") && (
             <button
               onClick={() => setIsCollabModalOpen(true)}
               className="flex items-center gap-1.5 rounded-xl border border-[#2D2D2D]/8 bg-white/60 px-3.5 py-1.5 text-xs font-semibold text-[#B36144] hover:bg-[#FFF3EB] hover:border-[#D67D5C]/35 hover:shadow-[0_8px_24px_rgba(214,125,92,0.06)] transition"
@@ -364,7 +376,7 @@ export function EventOverviewPanel({
                   >
                     <div
                       className="absolute inset-0 bg-cover bg-center transition-transform duration-500 group-hover:scale-105"
-                      style={{ backgroundImage: `url("${photo.public_url}")` }}
+                      style={{ backgroundImage: `url("${getOptimizedStorageUrl(photo.thumb_url || photo.public_url, { quality: 75 })}")` }}
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-all duration-300" />
                     <div className="absolute bottom-2 left-2 right-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
@@ -474,7 +486,7 @@ export function EventOverviewPanel({
             <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={selectedPhoto.public_url || ""}
+                src={getOptimizedStorageUrl(selectedPhoto.medium_url || selectedPhoto.public_url, { quality: 80 })}
                 alt={selectedPhoto.original_filename || "Preview"}
                 className="h-full w-full object-cover"
               />
@@ -1103,7 +1115,7 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
               >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
-                  style={{ backgroundImage: `url("${photo.public_url}")` }}
+                  style={{ backgroundImage: `url("${getOptimizedStorageUrl(photo.thumb_url || photo.public_url, { quality: 75 })}")` }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/30 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
               </div>
@@ -1133,7 +1145,7 @@ export function UploadsPanel({ event, photos }: { event: EventRecord; photos: Ev
             <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={selectedPhoto.public_url || ""}
+                src={getOptimizedStorageUrl(selectedPhoto.medium_url || selectedPhoto.public_url, { quality: 80 })}
                 alt={selectedPhoto.original_filename || "Preview"}
                 className="h-full w-full object-cover"
               />
@@ -1516,7 +1528,7 @@ export function GalleryPanel({ eventId, photos }: { eventId: string; photos: Eve
               >
                 <div
                   className="absolute inset-0 bg-cover bg-center transition-transform duration-500 will-change-transform group-hover:scale-105"
-                  style={{ backgroundImage: `url("${photo.public_url}")` }}
+                  style={{ backgroundImage: `url("${getOptimizedStorageUrl(photo.thumb_url || photo.public_url, { quality: 75 })}")` }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                 <div className="absolute bottom-3 left-3 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1566,7 +1578,7 @@ export function GalleryPanel({ eventId, photos }: { eventId: string; photos: Eve
             <div className="relative aspect-video w-full overflow-hidden rounded-xl border border-[#2D2D2D]/5 bg-[#FDF8F1]">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={selectedPhoto.public_url || ""}
+                src={getOptimizedStorageUrl(selectedPhoto.medium_url || selectedPhoto.public_url, { quality: 80 })}
                 alt={selectedPhoto.original_filename || "Preview"}
                 className="h-full w-full object-cover"
               />
@@ -1652,6 +1664,36 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
     (event as EventRecord & { privacy_mode?: boolean }).privacy_mode ?? false
   );
   const [privacyLoading, setPrivacyLoading] = useState(false);
+  const [disabledFeatures, setDisabledFeatures] = useState<string[]>([]);
+
+  useEffect(() => {
+    const checkFeatures = async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: profile } = await (supabase as any)
+          .from("profiles")
+          .select("disabled_features")
+          .eq("id", user.id)
+          .single();
+
+        const { data: systemSettings } = await (supabase as any)
+          .from("system_settings")
+          .select("value")
+          .eq("key", "disabled_features")
+          .maybeSingle();
+
+        const userDisabled = profile?.disabled_features || [];
+        const globalDisabled = systemSettings?.value || [];
+        setDisabledFeatures([...new Set([...userDisabled, ...globalDisabled])]);
+      } catch (err) {
+        console.error("Error loading features:", err);
+      }
+    };
+    checkFeatures();
+  }, []);
 
   const handleTogglePrivacy = async () => {
     const newMode = !privacyMode;
@@ -1750,11 +1792,18 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
                   )}
                 </div>
                 <p className="mt-1 text-xs leading-5 text-[#827970]">
-                  {privacyMode
-                    ? "Guests are redirected directly to Find Me. No one can browse the general gallery — photos are only revealed after selfie matching."
-                    : "When enabled, guests skip the gallery entirely. They must upload a selfie to see only the photos they appear in, protecting everyone's privacy."}
+                  {disabledFeatures.includes("privacy_mode") ? (
+                    <span className="text-red-500 font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-[14px]">info</span>
+                      This feature is disabled by system administrator.
+                    </span>
+                  ) : privacyMode ? (
+                    "Guests are redirected directly to Find Me. No one can browse the general gallery — photos are only revealed after selfie matching."
+                  ) : (
+                    "When enabled, guests skip the gallery entirely. They must upload a selfie to see only the photos they appear in, protecting everyone's privacy."
+                  )}
                 </p>
-                {privacyMode && (
+                {privacyMode && !disabledFeatures.includes("privacy_mode") && (
                   <div className="mt-3 space-y-1.5">
                     {[
                       "Gallery page hidden — redirect to Find Me",
@@ -1774,16 +1823,16 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
             {/* Toggle switch */}
             <button
               onClick={handleTogglePrivacy}
-              disabled={privacyLoading}
+              disabled={privacyLoading || disabledFeatures.includes("privacy_mode")}
               aria-label="Toggle Privacy Mode"
               className={`relative mt-0.5 h-7 w-13 shrink-0 rounded-full transition-colors duration-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 disabled:opacity-60 ${
-                privacyMode ? "bg-violet-500" : "bg-[#DED5CC]"
+                privacyMode && !disabledFeatures.includes("privacy_mode") ? "bg-violet-500" : "bg-[#DED5CC]"
               }`}
               style={{ minWidth: "52px" }}
             >
               <span
                 className={`absolute top-[3px] left-[3px] h-[22px] w-[22px] rounded-full bg-white shadow-md transition-transform duration-300 ${
-                  privacyMode ? "translate-x-[25px]" : "translate-x-0"
+                  privacyMode && !disabledFeatures.includes("privacy_mode") ? "translate-x-[25px]" : "translate-x-0"
                 }`}
               />
               {privacyLoading && (
@@ -1797,7 +1846,20 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
 
         {/* ── Other settings ───────────────────────────── */}
         <section className="overflow-hidden rounded-[26px] border border-[#2D2D2D]/6 bg-white/60 backdrop-blur-xl">
-          {settings.map((setting) => (
+          {[
+            { title: "Event visibility", description: "Allow guests with QR access to view matching images.", action: "Public to guests", icon: "visibility", disabled: false },
+            { title: "Gallery expiration", description: "Automatically archive delivered galleries after the event.", action: "30 days", icon: "schedule", disabled: false },
+            { 
+              title: "Branding settings", 
+              description: disabledFeatures.includes("custom_branding") 
+                ? "This feature is disabled by system administrator." 
+                : "Logo, accent and delivery message shown to guests.", 
+              action: disabledFeatures.includes("custom_branding") ? "Locked" : "Customize", 
+              icon: "palette", 
+              disabled: disabledFeatures.includes("custom_branding") 
+            },
+            { title: "Reset QR access", description: "Issue a new QR code and expire all previous entry links.", action: "Reset code", icon: "qr_code_2", disabled: false },
+          ].map((setting) => (
             <div className="flex flex-col gap-3 border-b border-[#2D2D2D]/6 p-4 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:p-6" key={setting.title}>
               <div className="flex items-start gap-3">
                 <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-[#FDF8F1] to-[#FFF3EB] text-[#B36144]">
@@ -1805,10 +1867,22 @@ export function SettingsPanel({ event }: { event: EventRecord }) {
                 </span>
                 <div>
                   <h2 className="text-sm font-semibold">{setting.title}</h2>
-                  <p className="mt-1 text-xs leading-5 text-[#827970]">{setting.description}</p>
+                  <p className={`mt-1 text-xs leading-5 ${setting.disabled ? "text-red-500 font-semibold" : "text-[#827970]"}`}>
+                    {setting.disabled && (
+                      <span className="inline-flex items-center gap-1.5 mr-1 align-middle text-red-500">
+                        <span className="material-symbols-outlined text-[13px]">info</span>
+                      </span>
+                    )}
+                    {setting.description}
+                  </p>
                 </div>
               </div>
-              <button className="w-fit shrink-0 rounded-xl border border-[#DED5CC] px-4 py-2.5 text-xs font-semibold text-[#625D58] transition hover:bg-[#FDF8F1]">{setting.action}</button>
+              <button 
+                disabled={setting.disabled}
+                className={`w-fit shrink-0 rounded-xl border border-[#DED5CC] px-4 py-2.5 text-xs font-semibold text-[#625D58] transition ${setting.disabled ? "opacity-50 cursor-not-allowed bg-stone-100" : "hover:bg-[#FDF8F1]"}`}
+              >
+                {setting.action}
+              </button>
             </div>
           ))}
         </section>

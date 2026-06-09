@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { hasEventSession } from "@/lib/guest-session";
+import { hasGuestSessionFor } from "@/lib/guest-session";
 import { checkCsrf, checkBodySize } from "@/lib/api-guard";
 
 /**
@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Verify guest session cookie for this event
-    const isAuthorized = await hasEventSession(eventId);
+    // Verify this browser is bound to the requested guest for this event.
+    const isAuthorized = await hasGuestSessionFor(eventId, guestId);
     if (!isAuthorized) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

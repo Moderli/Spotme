@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getGuestEvent, getPublicPhotoCount } from "@/lib/guest-data-server";
 import type { Event } from "@/types/database";
+import { GuestRedirector } from "./guest-redirector";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ export default async function EventLandingPage({
 
   return (
     <div className="min-h-[calc(100vh-56px)]">
+      <GuestRedirector eventId={eventId} />
       {/* ── Hero Cover ─────────────────────────────── */}
       <div className="relative h-[55vh] min-h-[340px] sm:h-[60vh] sm:min-h-[420px]">
         {event.cover_url ? (
