@@ -1,8 +1,9 @@
+@import url('https://fonts.googleapis.com/css2?family=Google+Sans+Flex:opsz,wght,wdth@8..144,100..1000,25..150&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --font-serif: var(--font-playfair), Georgia, serif;
-  --font-sans: var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: "Google Sans Flex", var(--font-playfair), Georgia, serif;
+  --font-sans: "Google Sans Flex", var(--font-plus-jakarta-sans), ui-sans-serif, system-ui, sans-serif;
   
   --color-primary: #94492c;
   --color-on-primary: #ffffff;
