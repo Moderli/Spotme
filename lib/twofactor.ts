@@ -2,8 +2,10 @@
 // twofactor.ts — 2Factor.in OTP API integration
 // Server-side helper to send and verify guest mobile OTP codes
 // ============================================================
+import crypto from "crypto";
 
 const API_KEY = process.env.FACTOR_API_KEY?.trim();
+const OTP_SECRET = process.env.GUEST_SESSION_SECRET || "spotme_guest_session_secret_default_32chars_spotme";
 
 /**
  * Normalise phone numbers to E.164-like format (e.g. +919876543210 or 919876543210)
@@ -28,6 +30,45 @@ interface VerifyOtpResult {
 }
 
 /**
+ * Helper to cryptographically sign the OTP session ID with a timestamp.
+ */
+function signOtpSession(sessionId: string, timestamp: number): string {
+  const payload = `${sessionId}:${timestamp}`;
+  const signature = crypto
+    .createHmac("sha256", OTP_SECRET)
+    .update(payload)
+    .digest("hex");
+  return `${payload}:${signature}`;
+}
+
+/**
+ * Helper to verify and decode the cryptographically signed OTP session ID.
+ */
+function verifyOtpSession(signedSessionId: string): { sessionId: string; timestamp: number } | null {
+  try {
+    const parts = signedSessionId.split(":");
+    if (parts.length !== 3) return null;
+    const [sessionId, timestampStr, signature] = parts;
+    const timestamp = parseInt(timestampStr, 10);
+    if (isNaN(timestamp)) return null;
+
+    const payload = `${sessionId}:${timestamp}`;
+    const expectedSignature = crypto
+      .createHmac("sha256", OTP_SECRET)
+      .update(payload)
+      .digest("hex");
+
+    if (signature !== expectedSignature) {
+      return null;
+    }
+
+    return { sessionId, timestamp };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Send an OTP code via 2Factor.in AUTOGEN API (or mock in development)
  */
 export async function sendOtpCode(phone: string): Promise<SendOtpResult> {
@@ -36,9 +77,10 @@ export async function sendOtpCode(phone: string): Promise<SendOtpResult> {
   if (!API_KEY || API_KEY === "" || API_KEY.startsWith("your_") || API_KEY.includes("FACTOR_API_KEY")) {
     // Mock Mode
     console.log(`\n========================================\n[2FACTOR MOCK] Sent OTP code "123456" to ${cleanPhone}\n========================================\n`);
+    const signedSessionId = signOtpSession("mock-session-id", Date.now());
     return {
       success: true,
-      sessionId: "mock-session-id",
+      sessionId: signedSessionId,
       method: "mock",
     };
   }
@@ -60,9 +102,10 @@ export async function sendOtpCode(phone: string): Promise<SendOtpResult> {
     const data = await res.json();
 
     if (data.Status === "Success") {
+      const signedSessionId = signOtpSession(data.Details, Date.now());
       return {
         success: true,
-        sessionId: data.Details, // Session ID hash
+        sessionId: signedSessionId, // Session ID hash
         method: "2factor",
       };
     } else {
@@ -87,7 +130,28 @@ export async function sendOtpCode(phone: string): Promise<SendOtpResult> {
 /**
  * Verify an OTP code via 2Factor.in SMS/VERIFY API (or mock in development)
  */
-export async function verifyOtpCode(sessionId: string, code: string): Promise<VerifyOtpResult> {
+export async function verifyOtpCode(signedSessionId: string, code: string): Promise<VerifyOtpResult> {
+  const verified = verifyOtpSession(signedSessionId);
+  if (!verified) {
+    return {
+      success: false,
+      error: "Invalid or tampered verification session.",
+      method: "mock",
+    };
+  }
+
+  const { sessionId, timestamp } = verified;
+
+  // Enforce 10-minute expiry (10 * 60 * 1000 ms)
+  const EXPIRY_MS = 10 * 60 * 1000;
+  if (Date.now() - timestamp > EXPIRY_MS) {
+    return {
+      success: false,
+      error: "Verification code has expired. Please request a new one.",
+      method: sessionId === "mock-session-id" ? "mock" : "2factor",
+    };
+  }
+
   if (sessionId === "mock-session-id") {
     if (code === "123456") {
       return { success: true, method: "mock" };
@@ -142,3 +206,4 @@ export async function verifyOtpCode(sessionId: string, code: string): Promise<Ve
     };
   }
 }
+

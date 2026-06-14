@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { registerGuest, sendOtpCode, getEventDetails } from "@/lib/guest-data-client";
 import { useGuestRedirect } from "@/lib/use-guest-redirect";
@@ -23,6 +23,20 @@ export default function VerifyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
+  const [expiryTimeLeft, setExpiryTimeLeft] = useState<number>(600); // 10 minutes in seconds
+  const [resendCooldown, setResendCooldown] = useState<number>(30); // 30 seconds cooldown
+
+  useEffect(() => {
+    if (step !== "otp_verify") return;
+
+    const interval = setInterval(() => {
+      setExpiryTimeLeft((prev) => (prev > 0 ? prev - 1 : 0));
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [step]);
 
   // Phone length rules per country
   const phoneRules: Record<string, number> = {
@@ -63,11 +77,36 @@ export default function VerifyPage() {
     if (result.success && result.sessionId) {
       setSessionId(result.sessionId);
       setStep("otp_verify");
+      setExpiryTimeLeft(600);
+      setResendCooldown(30);
       if (result.method === "mock") {
         setInfoMessage("Development mode: Enter 123456 as the verification code.");
       }
     } else {
       setError(result.error || "Failed to send verification code. Please check your number and try again.");
+    }
+    setSubmitting(false);
+  };
+
+  const handleResendOtp = async () => {
+    if (resendCooldown > 0 || submitting) return;
+    setSubmitting(true);
+    setError(null);
+    setInfoMessage(null);
+    setOtp("");
+
+    const fullPhone = `${countryCode}${phone}`;
+    const result = await sendOtpCode(fullPhone);
+
+    if (result.success && result.sessionId) {
+      setSessionId(result.sessionId);
+      setExpiryTimeLeft(600);
+      setResendCooldown(30);
+      if (result.method === "mock") {
+        setInfoMessage("Development mode: Enter 123456 as the verification code.");
+      }
+    } else {
+      setError(result.error || "Failed to resend verification code. Please try again.");
     }
     setSubmitting(false);
   };
@@ -221,10 +260,11 @@ export default function VerifyPage() {
                   type="text"
                   pattern="\d{6}"
                   maxLength={6}
+                  disabled={expiryTimeLeft === 0}
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, ""))}
                   placeholder="------"
-                  className="mt-2 h-14 w-full rounded-xl border border-slate-200 px-4 text-center text-2xl font-bold tracking-[0.4em] outline-none focus:border-[#D67D5C] focus:ring-1 focus:ring-[#D67D5C] placeholder:tracking-normal placeholder:font-normal placeholder:text-slate-300"
+                  className="mt-2 h-14 w-full rounded-xl border border-slate-200 px-4 text-center text-2xl font-bold tracking-[0.4em] outline-none focus:border-[#D67D5C] focus:ring-1 focus:ring-[#D67D5C] placeholder:tracking-normal placeholder:font-normal placeholder:text-slate-300 disabled:bg-slate-50 disabled:text-slate-400"
                 />
               </div>
 
@@ -242,24 +282,59 @@ export default function VerifyPage() {
 
               <button
                 type="submit"
-                disabled={submitting || otp.length !== 6}
+                disabled={submitting || otp.length !== 6 || expiryTimeLeft === 0}
                 className="mt-2 flex h-[52px] w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#D67D5C] to-[#C46A4A] text-base font-semibold text-white shadow-[0_8px_20px_rgba(214,125,92,0.2)] hover:-translate-y-0.5 transition active:scale-[0.98] disabled:opacity-50"
               >
                 {submitting ? "Verifying..." : "Verify & Access Photos"}
               </button>
 
-              <div className="text-center pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStep("phone_input");
-                    setError(null);
-                    setOtp("");
-                  }}
-                  className="text-xs font-medium text-[#827970] hover:text-[#2D2D2D] underline underline-offset-4"
-                >
-                  Change phone number
-                </button>
+              <div className="flex flex-col items-center gap-3 pt-4 border-t border-slate-100 mt-4 text-xs font-medium text-[#827970]">
+                {expiryTimeLeft > 0 ? (
+                  <div className="flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-base animate-pulse">schedule</span>
+                    <span>
+                      OTP expires in{" "}
+                      <span className="font-semibold text-slate-800">
+                        {Math.floor(expiryTimeLeft / 60)}:
+                        {String(expiryTimeLeft % 60).padStart(2, "0")}
+                      </span>
+                    </span>
+                  </div>
+                ) : (
+                  <div className="text-red-500 font-semibold flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-base">error</span>
+                    <span>OTP has expired. Please request a new one.</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-3">
+                  {resendCooldown > 0 ? (
+                    <span className="text-[#A69C93]">Resend code in {resendCooldown}s</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResendOtp}
+                      disabled={submitting}
+                      className="text-[#D67D5C] hover:text-[#C46A4A] font-semibold underline underline-offset-4 disabled:opacity-50"
+                    >
+                      Resend OTP
+                    </button>
+                  )}
+                  
+                  <span className="text-slate-200">|</span>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStep("phone_input");
+                      setError(null);
+                      setOtp("");
+                    }}
+                    className="hover:text-[#2D2D2D] underline underline-offset-4"
+                  >
+                    Change phone number
+                  </button>
+                </div>
               </div>
             </form>
           </div>
